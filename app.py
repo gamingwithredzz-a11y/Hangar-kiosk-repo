@@ -49,6 +49,7 @@ def init_db():
                 id text primary key,
                 table_id text not null,
                 avatar_id text not null,
+                avatar_name text,
                 status text not null,
                 created_at integer not null
             );
@@ -65,6 +66,7 @@ def init_db():
                 cart_id text not null,
                 table_id text not null,
                 avatar_id text not null,
+                avatar_name text,
                 amount_linden integer not null,
                 status text not null,
                 transaction_id text,
@@ -75,6 +77,7 @@ def init_db():
                 bill_id text unique not null,
                 table_id text not null,
                 avatar_id text not null,
+                avatar_name text,
                 items text not null,
                 amount_linden integer not null,
                 status text not null,
@@ -83,6 +86,9 @@ def init_db():
             );
             """
         )
+        ensure_column(conn, "carts", "avatar_name", "text")
+        ensure_column(conn, "bills", "avatar_name", "text")
+        ensure_column(conn, "kitchen_tickets", "avatar_name", "text")
         for item_id, name, price in MENU:
             conn.execute(
                 """
@@ -95,6 +101,12 @@ def init_db():
                 """,
                 (item_id, name, price),
             )
+
+
+def ensure_column(conn, table_name, column_name, column_type):
+    columns = [row["name"] for row in conn.execute(f"pragma table_info({table_name})")]
+    if column_name not in columns:
+        conn.execute(f"alter table {table_name} add column {column_name} {column_type}")
 
 
 def rows_to_dicts(rows):
@@ -124,17 +136,19 @@ def check_api_key(handler):
     return handler.headers.get("X-Hangar-Key") == API_KEY
 
 
-def get_or_create_cart(conn, table_id, avatar_id):
+def get_or_create_cart(conn, table_id, avatar_id, avatar_name):
     cart = conn.execute(
         "select * from carts where table_id = ? and avatar_id = ? and status = 'cart'",
         (table_id, avatar_id),
     ).fetchone()
     if cart:
+        if avatar_name:
+            conn.execute("update carts set avatar_name = ? where id = ?", (avatar_name, cart["id"]))
         return cart["id"]
     cart_id = make_id("cart")
     conn.execute(
-        "insert into carts (id, table_id, avatar_id, status, created_at) values (?, ?, ?, 'cart', ?)",
-        (cart_id, table_id, avatar_id, now()),
+        "insert into carts (id, table_id, avatar_id, avatar_name, status, created_at) values (?, ?, ?, ?, 'cart', ?)",
+        (cart_id, table_id, avatar_id, avatar_name, now()),
     )
     return cart_id
 
@@ -152,14 +166,15 @@ def create_ticket(conn, bill):
     conn.execute(
         """
         insert into kitchen_tickets
-        (id, bill_id, table_id, avatar_id, items, amount_linden, status, claimed_by, created_at)
-        values (?, ?, ?, ?, ?, ?, 'open', null, ?)
+        (id, bill_id, table_id, avatar_id, avatar_name, items, amount_linden, status, claimed_by, created_at)
+        values (?, ?, ?, ?, ?, ?, ?, 'open', null, ?)
         """,
         (
             ticket_id,
             bill["id"],
             bill["table_id"],
             bill["avatar_id"],
+            bill["avatar_name"] or bill["avatar_id"],
             json.dumps(items),
             bill["amount_linden"],
             now(),
@@ -177,6 +192,7 @@ def api_menu(_query, _body):
 def api_cart_add(_query, body):
     table_id = body.get("table_id")
     avatar_id = body.get("avatar_id")
+    avatar_name = body.get("avatar_name") or avatar_id
     item_id = body.get("item_id")
     if not table_id or not avatar_id or not item_id:
         return err("table_id, avatar_id, and item_id are required")
@@ -184,13 +200,13 @@ def api_cart_add(_query, body):
         item = conn.execute("select * from menu_items where id = ? and available = 1", (item_id,)).fetchone()
         if not item:
             return err("menu item is unavailable", 404)
-        cart_id = get_or_create_cart(conn, table_id, avatar_id)
+        cart_id = get_or_create_cart(conn, table_id, avatar_id, avatar_name)
         conn.execute(
             "insert into cart_items (id, cart_id, item_id, name, price_linden) values (?, ?, ?, ?, ?)",
             (make_id("ci"), cart_id, item["id"], item["name"], item["price_linden"]),
         )
         items = cart_items(conn, cart_id)
-    return ok({"cart": {"id": cart_id, "table_id": table_id, "avatar_id": avatar_id, "items": items}})
+    return ok({"cart": {"id": cart_id, "table_id": table_id, "avatar_id": avatar_id, "avatar_name": avatar_name, "items": items}})
 
 
 def api_order_place(_query, body):
@@ -221,10 +237,10 @@ def api_order_place(_query, body):
         conn.execute(
             """
             insert into bills
-            (id, payment_id, cart_id, table_id, avatar_id, amount_linden, status, created_at)
-            values (?, ?, ?, ?, ?, ?, 'pending_payment', ?)
+            (id, payment_id, cart_id, table_id, avatar_id, avatar_name, amount_linden, status, created_at)
+            values (?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?)
             """,
-            (bill_id, payment_id, cart["id"], table_id, avatar_id, amount, now()),
+            (bill_id, payment_id, cart["id"], table_id, avatar_id, cart["avatar_name"] or avatar_id, amount, now()),
         )
         bill = dict(conn.execute("select * from bills where id = ?", (bill_id,)).fetchone())
     return ok({"bill": bill})
@@ -366,7 +382,7 @@ def kitchen_page():
         <section class="ticket">
           <div class="top"><div class="table">${t.table_id}</div><div class="status">${t.status}</div></div>
           <div class="items">${itemText(t)}</div>
-          <div class="meta">Avatar: ${t.avatar_id}<br>L$${t.amount_linden}</div>
+          <div class="meta">Guest: ${t.avatar_name || t.avatar_id}<br>L$${t.amount_linden}</div>
           <p>
             ${t.status === "open" ? `<button onclick="action('/api/kitchen/claim','${t.id}')">Claim</button>` : ""}
             <button class="done" onclick="action('/api/kitchen/complete','${t.id}')">Complete</button>
