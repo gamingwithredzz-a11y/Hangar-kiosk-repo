@@ -3,6 +3,7 @@ import os
 import sqlite3
 import time
 import uuid
+
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -11,14 +12,33 @@ from zoneinfo import ZoneInfo
 
 
 # ============================================================
-# THE HANGAR KITCHEN BACKEND
+# CONFIGURATION
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = Path(os.environ.get("DATABASE_PATH", BASE_DIR / "hangar.db"))
-API_KEY = os.environ.get("HANGAR_API_KEY", "")
-PACIFIC = ZoneInfo("America/Los_Angeles")
 
+DB_PATH = Path(
+    os.environ.get(
+        "DATABASE_PATH",
+        BASE_DIR / "hangar.db"
+    )
+)
+
+API_KEY = os.environ.get(
+    "HANGAR_API_KEY",
+    ""
+)
+
+PACIFIC = ZoneInfo(
+    "America/Los_Angeles"
+)
+
+MAX_KITCHEN_PAGE = 6
+
+
+# ============================================================
+# MENU
+# ============================================================
 
 MENU = [
     ("wings12", "12 Piece Wings", 1),
@@ -33,32 +53,60 @@ MENU = [
 # ============================================================
 
 def db():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DB_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(
+        DB_PATH
+    )
+
     conn.row_factory = sqlite3.Row
 
     return conn
 
 
+# ============================================================
+# TIME
+# ============================================================
+
 def now():
-    return int(time.time())
+    return int(
+        time.time()
+    )
 
 
 def pacific_time(timestamp):
+    if not timestamp:
+        return None
+
     dt = datetime.fromtimestamp(
         timestamp,
         timezone.utc
-    ).astimezone(PACIFIC)
+    ).astimezone(
+        PACIFIC
+    )
 
     return dt.strftime(
         "%Y-%m-%d %I:%M:%S %p %Z"
     )
 
 
-def make_id(prefix):
-    return f"{prefix}_{uuid.uuid4().hex[:12]}"
+# ============================================================
+# IDS
+# ============================================================
 
+def make_id(prefix):
+    return (
+        f"{prefix}_"
+        f"{uuid.uuid4().hex[:12]}"
+    )
+
+
+# ============================================================
+# DATABASE MIGRATIONS
+# ============================================================
 
 def ensure_column(
     conn,
@@ -69,151 +117,180 @@ def ensure_column(
     columns = [
         row["name"]
         for row in conn.execute(
-            f"pragma table_info({table_name})"
+            f"PRAGMA table_info({table_name})"
         )
     ]
 
     if column_name not in columns:
         conn.execute(
-            f"alter table {table_name} "
-            f"add column {column_name} {column_type}"
+            f"""
+            ALTER TABLE {table_name}
+            ADD COLUMN {column_name} {column_type}
+            """
         )
 
+
+# ============================================================
+# INITIALIZE DATABASE
+# ============================================================
 
 def init_db():
 
     with db() as conn:
 
-        conn.executescript("""
-            create table if not exists menu_items (
-                id text primary key,
-                name text not null,
-                price_linden integer not null,
-                available integer not null default 1
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS menu_items (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                price_linden INTEGER NOT NULL,
+                available INTEGER NOT NULL DEFAULT 1
             );
 
-            create table if not exists carts (
-                id text primary key,
-                table_id text not null,
-                avatar_id text not null,
-                avatar_name text,
-                status text not null,
-                created_at integer not null
+            CREATE TABLE IF NOT EXISTS carts (
+                id TEXT PRIMARY KEY,
+                table_id TEXT NOT NULL,
+                avatar_id TEXT NOT NULL,
+                avatar_name TEXT,
+                status TEXT NOT NULL,
+                created_at INTEGER NOT NULL
             );
 
-            create table if not exists cart_items (
-                id text primary key,
-                cart_id text not null,
-                item_id text not null,
-                name text not null,
-                price_linden integer not null
+            CREATE TABLE IF NOT EXISTS cart_items (
+                id TEXT PRIMARY KEY,
+                cart_id TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                price_linden INTEGER NOT NULL
             );
 
-            create table if not exists bills (
-                id text primary key,
-                payment_id text unique not null,
-                cart_id text not null,
-                table_id text not null,
-                avatar_id text not null,
-                avatar_name text,
-                amount_linden integer not null,
-                status text not null,
-                transaction_id text,
-                created_at integer not null
+            CREATE TABLE IF NOT EXISTS bills (
+                id TEXT PRIMARY KEY,
+                payment_id TEXT UNIQUE NOT NULL,
+                cart_id TEXT NOT NULL,
+                table_id TEXT NOT NULL,
+                avatar_id TEXT NOT NULL,
+                avatar_name TEXT,
+                amount_linden INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                transaction_id TEXT,
+                created_at INTEGER NOT NULL
             );
 
-            create table if not exists kitchen_tickets (
-                id text primary key,
-                bill_id text unique not null,
-                table_id text not null,
-                avatar_id text not null,
-                avatar_name text,
-                items text not null,
-                amount_linden integer not null,
-                status text not null,
-                claimed_by text,
-                claimed_by_name text,
-                claimed_at integer,
-                completed_by text,
-                completed_by_name text,
-                completed_at integer,
-                created_at integer not null
+            CREATE TABLE IF NOT EXISTS kitchen_tickets (
+                id TEXT PRIMARY KEY,
+                bill_id TEXT UNIQUE NOT NULL,
+                table_id TEXT NOT NULL,
+                avatar_id TEXT NOT NULL,
+                avatar_name TEXT,
+                items TEXT NOT NULL,
+                amount_linden INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                claimed_by TEXT,
+                claimed_by_name TEXT,
+                claimed_at INTEGER,
+                completed_by TEXT,
+                completed_by_name TEXT,
+                completed_at INTEGER,
+                created_at INTEGER NOT NULL
             );
-        """)
+            """
+        )
+
+        # ----------------------------------------------------
+        # Existing database upgrades
+        # ----------------------------------------------------
 
         ensure_column(
             conn,
             "carts",
             "avatar_name",
-            "text"
+            "TEXT"
         )
 
         ensure_column(
             conn,
             "bills",
             "avatar_name",
-            "text"
+            "TEXT"
         )
 
         ensure_column(
             conn,
             "kitchen_tickets",
             "avatar_name",
-            "text"
+            "TEXT"
         )
 
         ensure_column(
             conn,
             "kitchen_tickets",
             "claimed_by_name",
-            "text"
+            "TEXT"
         )
 
         ensure_column(
             conn,
             "kitchen_tickets",
             "claimed_at",
-            "integer"
+            "INTEGER"
         )
 
         ensure_column(
             conn,
             "kitchen_tickets",
             "completed_by",
-            "text"
+            "TEXT"
         )
 
         ensure_column(
             conn,
             "kitchen_tickets",
             "completed_by_name",
-            "text"
+            "TEXT"
         )
 
         ensure_column(
             conn,
             "kitchen_tickets",
             "completed_at",
-            "integer"
+            "INTEGER"
         )
+
+        # ----------------------------------------------------
+        # Menu
+        # ----------------------------------------------------
 
         for item_id, name, price in MENU:
 
-            conn.execute("""
-                insert into menu_items
-                (id, name, price_linden, available)
-                values (?, ?, ?, 1)
+            conn.execute(
+                """
+                INSERT INTO menu_items
+                (
+                    id,
+                    name,
+                    price_linden,
+                    available
+                )
+                VALUES (?, ?, ?, 1)
 
-                on conflict(id) do update set
+                ON CONFLICT(id)
+                DO UPDATE SET
                     name = excluded.name,
                     price_linden = excluded.price_linden,
                     available = excluded.available
-            """, (
-                item_id,
-                name,
-                price
-            ))
+                """,
+                (
+                    item_id,
+                    name,
+                    price
+                )
+            )
 
+
+# ============================================================
+# DATABASE HELPERS
+# ============================================================
 
 def rows_to_dicts(rows):
     return [
@@ -221,10 +298,6 @@ def rows_to_dicts(rows):
         for row in rows
     ]
 
-
-# ============================================================
-# REQUEST HELPERS
-# ============================================================
 
 def read_body(handler):
 
@@ -236,28 +309,44 @@ def read_body(handler):
     )
 
     raw = (
-        handler.rfile.read(length)
+        handler.rfile
+        .read(length)
         .decode("utf-8")
         if length
         else "{}"
     )
 
-    return json.loads(raw or "{}")
+    if not raw:
+        return {}
+
+    return json.loads(raw)
 
 
-def ok(payload=None, status=200):
+# ============================================================
+# API RESPONSES
+# ============================================================
+
+def ok(
+    payload=None,
+    status=200
+):
 
     data = {
         "ok": True
     }
 
     if payload:
-        data.update(payload)
+        data.update(
+            payload
+        )
 
     return status, data
 
 
-def err(message, status=400):
+def err(
+    message,
+    status=400
+):
 
     return status, {
         "ok": False,
@@ -265,19 +354,25 @@ def err(message, status=400):
     }
 
 
+# ============================================================
+# API KEY
+# ============================================================
+
 def check_api_key(handler):
 
     if not API_KEY:
         return True
 
     return (
-        handler.headers.get("X-Hangar-Key")
+        handler.headers.get(
+            "X-Hangar-Key"
+        )
         == API_KEY
     )
 
 
 # ============================================================
-# CART SYSTEM
+# CART
 # ============================================================
 
 def get_or_create_cart(
@@ -289,11 +384,11 @@ def get_or_create_cart(
 
     cart = conn.execute(
         """
-        select *
-        from carts
-        where table_id = ?
-        and avatar_id = ?
-        and status = 'cart'
+        SELECT *
+        FROM carts
+        WHERE table_id = ?
+        AND avatar_id = ?
+        AND status = 'cart'
         """,
         (
             table_id,
@@ -307,9 +402,9 @@ def get_or_create_cart(
 
             conn.execute(
                 """
-                update carts
-                set avatar_name = ?
-                where id = ?
+                UPDATE carts
+                SET avatar_name = ?
+                WHERE id = ?
                 """,
                 (
                     avatar_name,
@@ -319,11 +414,13 @@ def get_or_create_cart(
 
         return cart["id"]
 
-    cart_id = make_id("cart")
+    cart_id = make_id(
+        "cart"
+    )
 
     conn.execute(
         """
-        insert into carts
+        INSERT INTO carts
         (
             id,
             table_id,
@@ -332,14 +429,7 @@ def get_or_create_cart(
             status,
             created_at
         )
-        values (
-            ?,
-            ?,
-            ?,
-            ?,
-            'cart',
-            ?
-        )
+        VALUES (?, ?, ?, ?, 'cart', ?)
         """,
         (
             cart_id,
@@ -353,19 +443,24 @@ def get_or_create_cart(
     return cart_id
 
 
-def cart_items(conn, cart_id):
+def cart_items(
+    conn,
+    cart_id
+):
 
     return rows_to_dicts(
         conn.execute(
             """
-            select
+            SELECT
                 item_id,
                 name,
                 price_linden
-            from cart_items
-            where cart_id = ?
+            FROM cart_items
+            WHERE cart_id = ?
             """,
-            (cart_id,)
+            (
+                cart_id,
+            )
         )
     )
 
@@ -374,15 +469,20 @@ def cart_items(conn, cart_id):
 # KITCHEN TICKET CREATION
 # ============================================================
 
-def create_ticket(conn, bill):
+def create_ticket(
+    conn,
+    bill
+):
 
     existing = conn.execute(
         """
-        select *
-        from kitchen_tickets
-        where bill_id = ?
+        SELECT *
+        FROM kitchen_tickets
+        WHERE bill_id = ?
         """,
-        (bill["id"],)
+        (
+            bill["id"],
+        )
     ).fetchone()
 
     if existing:
@@ -393,10 +493,13 @@ def create_ticket(conn, bill):
         bill["cart_id"]
     )
 
-    ticket_id = make_id("kit")
+    ticket_id = make_id(
+        "kit"
+    )
 
-    conn.execute("""
-        insert into kitchen_tickets
+    conn.execute(
+        """
+        INSERT INTO kitchen_tickets
         (
             id,
             bill_id,
@@ -414,7 +517,7 @@ def create_ticket(conn, bill):
             completed_at,
             created_at
         )
-        values (
+        VALUES (
             ?,
             ?,
             ?,
@@ -423,52 +526,60 @@ def create_ticket(conn, bill):
             ?,
             ?,
             'open',
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            NULL,
             ?
         )
-    """, (
-        ticket_id,
-        bill["id"],
-        bill["table_id"],
-        bill["avatar_id"],
-        bill["avatar_name"] or bill["avatar_id"],
-        json.dumps(items),
-        bill["amount_linden"],
-        now()
-    ))
+        """,
+        (
+            ticket_id,
+            bill["id"],
+            bill["table_id"],
+            bill["avatar_id"],
+            bill["avatar_name"]
+                or bill["avatar_id"],
+            json.dumps(items),
+            bill["amount_linden"],
+            now()
+        )
+    )
 
     return dict(
         conn.execute(
             """
-            select *
-            from kitchen_tickets
-            where id = ?
+            SELECT *
+            FROM kitchen_tickets
+            WHERE id = ?
             """,
-            (ticket_id,)
+            (
+                ticket_id,
+            )
         ).fetchone()
     )
 
 
 # ============================================================
-# MENU
+# MENU API
 # ============================================================
 
-def api_menu(_query, _body):
+def api_menu(
+    _query,
+    _body
+):
 
     with db() as conn:
 
         items = rows_to_dicts(
             conn.execute(
                 """
-                select *
-                from menu_items
-                where available = 1
-                order by rowid
+                SELECT *
+                FROM menu_items
+                WHERE available = 1
+                ORDER BY rowid
                 """
             )
         )
@@ -480,21 +591,36 @@ def api_menu(_query, _body):
 
 
 # ============================================================
-# CART ADD
+# ADD TO CART
 # ============================================================
 
-def api_cart_add(_query, body):
+def api_cart_add(
+    _query,
+    body
+):
 
-    table_id = body.get("table_id")
-    avatar_id = body.get("avatar_id")
+    table_id = body.get(
+        "table_id"
+    )
+
+    avatar_id = body.get(
+        "avatar_id"
+    )
+
     avatar_name = (
         body.get("avatar_name")
         or avatar_id
     )
-    item_id = body.get("item_id")
 
-    if not table_id or not avatar_id or not item_id:
+    item_id = body.get(
+        "item_id"
+    )
 
+    if (
+        not table_id
+        or not avatar_id
+        or not item_id
+    ):
         return err(
             "table_id, avatar_id, and item_id are required"
         )
@@ -503,12 +629,14 @@ def api_cart_add(_query, body):
 
         item = conn.execute(
             """
-            select *
-            from menu_items
-            where id = ?
-            and available = 1
+            SELECT *
+            FROM menu_items
+            WHERE id = ?
+            AND available = 1
             """,
-            (item_id,)
+            (
+                item_id,
+            )
         ).fetchone()
 
         if not item:
@@ -526,7 +654,7 @@ def api_cart_add(_query, body):
 
         conn.execute(
             """
-            insert into cart_items
+            INSERT INTO cart_items
             (
                 id,
                 cart_id,
@@ -534,7 +662,7 @@ def api_cart_add(_query, body):
                 name,
                 price_linden
             )
-            values (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
                 make_id("ci"),
@@ -565,13 +693,23 @@ def api_cart_add(_query, body):
 # PLACE ORDER
 # ============================================================
 
-def api_order_place(_query, body):
+def api_order_place(
+    _query,
+    body
+):
 
-    table_id = body.get("table_id")
-    avatar_id = body.get("avatar_id")
+    table_id = body.get(
+        "table_id"
+    )
 
-    if not table_id or not avatar_id:
+    avatar_id = body.get(
+        "avatar_id"
+    )
 
+    if (
+        not table_id
+        or not avatar_id
+    ):
         return err(
             "table_id and avatar_id are required"
         )
@@ -580,11 +718,11 @@ def api_order_place(_query, body):
 
         pending = conn.execute(
             """
-            select *
-            from bills
-            where table_id = ?
-            and avatar_id = ?
-            and status = 'pending_payment'
+            SELECT *
+            FROM bills
+            WHERE table_id = ?
+            AND avatar_id = ?
+            AND status = 'pending_payment'
             """,
             (
                 table_id,
@@ -600,11 +738,11 @@ def api_order_place(_query, body):
 
         cart = conn.execute(
             """
-            select *
-            from carts
-            where table_id = ?
-            and avatar_id = ?
-            and status = 'cart'
+            SELECT *
+            FROM carts
+            WHERE table_id = ?
+            AND avatar_id = ?
+            AND status = 'cart'
             """,
             (
                 table_id,
@@ -634,21 +772,28 @@ def api_order_place(_query, body):
             for item in items
         )
 
-        bill_id = make_id("bill")
-        payment_id = make_id("pay")
+        bill_id = make_id(
+            "bill"
+        )
 
-        conn.execute(
-            """
-            update carts
-            set status = 'pending_payment'
-            where id = ?
-            """,
-            (cart["id"],)
+        payment_id = make_id(
+            "pay"
         )
 
         conn.execute(
             """
-            insert into bills
+            UPDATE carts
+            SET status = 'pending_payment'
+            WHERE id = ?
+            """,
+            (
+                cart["id"],
+            )
+        )
+
+        conn.execute(
+            """
+            INSERT INTO bills
             (
                 id,
                 payment_id,
@@ -660,17 +805,7 @@ def api_order_place(_query, body):
                 status,
                 created_at
             )
-            values (
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                'pending_payment',
-                ?
-            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?)
             """,
             (
                 bill_id,
@@ -678,7 +813,8 @@ def api_order_place(_query, body):
                 cart["id"],
                 table_id,
                 avatar_id,
-                cart["avatar_name"] or avatar_id,
+                cart["avatar_name"]
+                    or avatar_id,
                 amount,
                 now()
             )
@@ -687,11 +823,13 @@ def api_order_place(_query, body):
         bill = dict(
             conn.execute(
                 """
-                select *
-                from bills
-                where id = ?
+                SELECT *
+                FROM bills
+                WHERE id = ?
                 """,
-                (bill_id,)
+                (
+                    bill_id,
+                )
             ).fetchone()
         )
 
@@ -701,10 +839,13 @@ def api_order_place(_query, body):
 
 
 # ============================================================
-# PAYMENT PENDING
+# PENDING PAYMENTS
 # ============================================================
 
-def api_pay_pending(query, _body):
+def api_pay_pending(
+    query,
+    _body
+):
 
     avatar_id = query.get(
         "avatar_id",
@@ -712,7 +853,6 @@ def api_pay_pending(query, _body):
     )[0]
 
     if not avatar_id:
-
         return err(
             "avatar_id is required"
         )
@@ -722,17 +862,20 @@ def api_pay_pending(query, _body):
         bills = rows_to_dicts(
             conn.execute(
                 """
-                select
+                SELECT
                     payment_id,
                     table_id,
                     avatar_id,
                     amount_linden,
                     status
-                from bills
-                where avatar_id = ?
-                and status = 'pending_payment'
+                FROM bills
+                WHERE avatar_id = ?
+                AND status = 'pending_payment'
+                ORDER BY created_at DESC
                 """,
-                (avatar_id,)
+                (
+                    avatar_id,
+                )
             )
         )
 
@@ -742,15 +885,30 @@ def api_pay_pending(query, _body):
 
 
 # ============================================================
-# PAYMENT CONFIRM
+# PAYMENT CONFIRMATION
 # ============================================================
 
-def api_pay_confirm(_query, body):
+def api_pay_confirm(
+    _query,
+    body
+):
 
-    payment_id = body.get("payment_id")
-    table_id = body.get("table_id")
-    avatar_id = body.get("avatar_id")
-    amount = body.get("amount_linden")
+    payment_id = body.get(
+        "payment_id"
+    )
+
+    table_id = body.get(
+        "table_id"
+    )
+
+    avatar_id = body.get(
+        "avatar_id"
+    )
+
+    amount = body.get(
+        "amount_linden"
+    )
+
     transaction_id = body.get(
         "transaction_id",
         ""
@@ -762,7 +920,6 @@ def api_pay_confirm(_query, body):
         or not avatar_id
         or amount is None
     ):
-
         return err(
             "payment_id, table_id, avatar_id, and amount_linden are required"
         )
@@ -771,15 +928,16 @@ def api_pay_confirm(_query, body):
 
         bill = conn.execute(
             """
-            select *
-            from bills
-            where payment_id = ?
+            SELECT *
+            FROM bills
+            WHERE payment_id = ?
             """,
-            (payment_id,)
+            (
+                payment_id,
+            )
         ).fetchone()
 
         if not bill:
-
             return err(
                 "pending bill was not found",
                 404
@@ -791,7 +949,6 @@ def api_pay_confirm(_query, body):
             bill["table_id"] != table_id
             or bill["avatar_id"] != avatar_id
         ):
-
             return err(
                 "payment context does not match bill",
                 403
@@ -800,7 +957,6 @@ def api_pay_confirm(_query, body):
         if int(amount) != int(
             bill["amount_linden"]
         ):
-
             return err(
                 "payment amount does not match bill",
                 409
@@ -810,10 +966,11 @@ def api_pay_confirm(_query, body):
 
             conn.execute(
                 """
-                update bills
-                set status = 'paid',
+                UPDATE bills
+                SET
+                    status = 'paid',
                     transaction_id = ?
-                where payment_id = ?
+                WHERE payment_id = ?
                 """,
                 (
                     transaction_id,
@@ -823,15 +980,20 @@ def api_pay_confirm(_query, body):
 
             conn.execute(
                 """
-                update carts
-                set status = 'paid'
-                where id = ?
+                UPDATE carts
+                SET status = 'paid'
+                WHERE id = ?
                 """,
-                (bill["cart_id"],)
+                (
+                    bill["cart_id"],
+                )
             )
 
             bill["status"] = "paid"
-            bill["transaction_id"] = transaction_id
+
+            bill["transaction_id"] = (
+                transaction_id
+            )
 
         ticket = create_ticket(
             conn,
@@ -845,41 +1007,42 @@ def api_pay_confirm(_query, body):
 
 
 # ============================================================
-# FULL TICKET SERIALIZER
+# SERIALIZE KITCHEN TICKET
 # ============================================================
 
 def serialize_ticket(ticket):
 
-    ticket = dict(ticket)
-
-    ticket["items"] = json.loads(
-        ticket["items"]
+    ticket = dict(
+        ticket
     )
 
-    ticket["created_at_pacific"] = pacific_time(
-        ticket["created_at"]
+    try:
+        ticket["items"] = json.loads(
+            ticket["items"]
+        )
+    except Exception:
+        ticket["items"] = []
+
+    ticket["created_at_pacific"] = (
+        pacific_time(
+            ticket["created_at"]
+        )
     )
 
-    if ticket.get("claimed_at"):
-
-        ticket["claimed_at_pacific"] = pacific_time(
-            ticket["claimed_at"]
+    ticket["claimed_at_pacific"] = (
+        pacific_time(
+            ticket.get("claimed_at")
         )
+    )
 
-    else:
-
-        ticket["claimed_at_pacific"] = None
-
-    if ticket.get("completed_at"):
-
-        ticket["completed_at_pacific"] = pacific_time(
-            ticket["completed_at"]
+    ticket["completed_at_pacific"] = (
+        pacific_time(
+            ticket.get("completed_at")
         )
+    )
 
-    else:
-
-        ticket["completed_at_pacific"] = None
-
+    # Do not expose private avatar UUIDs
+    # to the kitchen controller.
     ticket.pop(
         "avatar_id",
         None
@@ -899,55 +1062,94 @@ def serialize_ticket(ticket):
 
 
 # ============================================================
-# COMPACT SL CONTROLLER SERIALIZER
+# KITCHEN TICKETS
+#
+# IMPORTANT:
+# This is now paginated.
+#
+# Example:
+# /api/kitchen/tickets?limit=6&offset=0
+#
+# Page 1 = 0-5
+# Page 2 = 6-11
+# Page 3 = 12-17
 # ============================================================
 
-def serialize_controller_ticket(ticket):
+def api_tickets(
+    query,
+    _body
+):
 
-    ticket = dict(ticket)
-
-    if ticket.get("claimed_at"):
-
-        claimed_at_pacific = pacific_time(
-            ticket["claimed_at"]
+    try:
+        limit = int(
+            query.get(
+                "limit",
+                ["6"]
+            )[0]
         )
+    except (
+        ValueError,
+        TypeError
+    ):
+        limit = 6
 
-    else:
-
-        claimed_at_pacific = None
-
-    return {
-        "id": ticket["id"],
-        "table_id": ticket["table_id"],
-        "avatar_name": ticket["avatar_name"],
-        "amount_linden": ticket["amount_linden"],
-        "status": ticket["status"],
-        "claimed_by_name": ticket["claimed_by_name"],
-        "claimed_at_pacific": claimed_at_pacific,
-        "created_at_pacific": pacific_time(
-            ticket["created_at"]
+    try:
+        offset = int(
+            query.get(
+                "offset",
+                ["0"]
+            )[0]
         )
-    }
+    except (
+        ValueError,
+        TypeError
+    ):
+        offset = 0
 
+    if limit < 1:
+        limit = 6
 
-# ============================================================
-# FULL KITCHEN TICKETS
-# ============================================================
+    if limit > MAX_KITCHEN_PAGE:
+        limit = MAX_KITCHEN_PAGE
 
-def api_tickets(_query, _body):
+    if offset < 0:
+        offset = 0
 
     with db() as conn:
 
+        total_row = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM kitchen_tickets
+            WHERE status != 'complete'
+            """
+        ).fetchone()
+
+        total = int(
+            total_row["count"]
+        )
+
         tickets = conn.execute(
             """
-            select *
-            from kitchen_tickets
-            order by created_at desc
-            """
+            SELECT *
+            FROM kitchen_tickets
+            WHERE status != 'complete'
+            ORDER BY
+                created_at DESC,
+                id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (
+                limit,
+                offset
+            )
         ).fetchall()
 
     return ok({
         "timezone": "America/Los_Angeles",
+        "limit": limit,
+        "offset": offset,
+        "total": total,
         "tickets": [
             serialize_ticket(ticket)
             for ticket in tickets
@@ -956,61 +1158,33 @@ def api_tickets(_query, _body):
 
 
 # ============================================================
-# COMPACT KITCHEN CONTROLLER TICKETS
-#
-# Designed specifically for Second Life LSL.
-#
-# Returns ALL active orders.
-# No 3-order limit.
+# CLAIM TICKET
 # ============================================================
 
-def api_controller_tickets(_query, _body):
+def api_claim(
+    _query,
+    body
+):
 
-    with db() as conn:
+    ticket_id = body.get(
+        "ticket_id"
+    )
 
-        tickets = conn.execute(
-            """
-            select
-                id,
-                table_id,
-                avatar_name,
-                amount_linden,
-                status,
-                claimed_by_name,
-                claimed_at,
-                created_at
-            from kitchen_tickets
-            where status != 'complete'
-            order by created_at desc
-            """
-        ).fetchall()
-
-    return ok({
-        "timezone": "America/Los_Angeles",
-        "tickets": [
-            serialize_controller_ticket(ticket)
-            for ticket in tickets
-        ]
-    })
-
-
-# ============================================================
-# CLAIM
-# ============================================================
-
-def api_claim(_query, body):
-
-    ticket_id = body.get("ticket_id")
     staff_avatar_id = body.get(
         "staff_avatar_id"
     )
+
     staff_avatar_name = (
-        body.get("staff_avatar_name")
+        body.get(
+            "staff_avatar_name"
+        )
         or staff_avatar_id
     )
 
-    if not ticket_id or not staff_avatar_id:
-
+    if (
+        not ticket_id
+        or not staff_avatar_id
+    ):
         return err(
             "ticket_id and staff_avatar_id are required"
         )
@@ -1019,22 +1193,22 @@ def api_claim(_query, body):
 
         ticket = conn.execute(
             """
-            select *
-            from kitchen_tickets
-            where id = ?
+            SELECT *
+            FROM kitchen_tickets
+            WHERE id = ?
             """,
-            (ticket_id,)
+            (
+                ticket_id,
+            )
         ).fetchone()
 
         if not ticket:
-
             return err(
                 "ticket was not found",
                 404
             )
 
         if ticket["status"] == "complete":
-
             return err(
                 "ticket is already complete",
                 409
@@ -1042,9 +1216,9 @@ def api_claim(_query, body):
 
         if (
             ticket["claimed_by"]
-            and ticket["claimed_by"] != staff_avatar_id
+            and ticket["claimed_by"]
+            != staff_avatar_id
         ):
-
             return err(
                 "ticket is already claimed by "
                 + (
@@ -1056,13 +1230,13 @@ def api_claim(_query, body):
 
         conn.execute(
             """
-            update kitchen_tickets
-            set
+            UPDATE kitchen_tickets
+            SET
                 status = 'claimed',
                 claimed_by = ?,
                 claimed_by_name = ?,
                 claimed_at = ?
-            where id = ?
+            WHERE id = ?
             """,
             (
                 staff_avatar_id,
@@ -1074,11 +1248,13 @@ def api_claim(_query, body):
 
         updated = conn.execute(
             """
-            select *
-            from kitchen_tickets
-            where id = ?
+            SELECT *
+            FROM kitchen_tickets
+            WHERE id = ?
             """,
-            (ticket_id,)
+            (
+                ticket_id,
+            )
         ).fetchone()
 
     return ok({
@@ -1089,22 +1265,33 @@ def api_claim(_query, body):
 
 
 # ============================================================
-# COMPLETE
+# COMPLETE TICKET
 # ============================================================
 
-def api_complete(_query, body):
+def api_complete(
+    _query,
+    body
+):
 
-    ticket_id = body.get("ticket_id")
+    ticket_id = body.get(
+        "ticket_id"
+    )
+
     staff_avatar_id = body.get(
         "staff_avatar_id"
     )
+
     staff_avatar_name = (
-        body.get("staff_avatar_name")
+        body.get(
+            "staff_avatar_name"
+        )
         or staff_avatar_id
     )
 
-    if not ticket_id or not staff_avatar_id:
-
+    if (
+        not ticket_id
+        or not staff_avatar_id
+    ):
         return err(
             "ticket_id and staff_avatar_id are required"
         )
@@ -1113,15 +1300,16 @@ def api_complete(_query, body):
 
         ticket = conn.execute(
             """
-            select *
-            from kitchen_tickets
-            where id = ?
+            SELECT *
+            FROM kitchen_tickets
+            WHERE id = ?
             """,
-            (ticket_id,)
+            (
+                ticket_id,
+            )
         ).fetchone()
 
         if not ticket:
-
             return err(
                 "ticket was not found",
                 404
@@ -1137,9 +1325,9 @@ def api_complete(_query, body):
 
         if (
             ticket["claimed_by"]
-            and ticket["claimed_by"] != staff_avatar_id
+            and ticket["claimed_by"]
+            != staff_avatar_id
         ):
-
             return err(
                 "only "
                 + (
@@ -1152,13 +1340,13 @@ def api_complete(_query, body):
 
         conn.execute(
             """
-            update kitchen_tickets
-            set
+            UPDATE kitchen_tickets
+            SET
                 status = 'complete',
                 completed_by = ?,
                 completed_by_name = ?,
                 completed_at = ?
-            where id = ?
+            WHERE id = ?
             """,
             (
                 staff_avatar_id,
@@ -1170,11 +1358,13 @@ def api_complete(_query, body):
 
         updated = conn.execute(
             """
-            select *
-            from kitchen_tickets
-            where id = ?
+            SELECT *
+            FROM kitchen_tickets
+            WHERE id = ?
             """,
-            (ticket_id,)
+            (
+                ticket_id,
+            )
         ).fetchone()
 
     return ok({
@@ -1188,22 +1378,25 @@ def api_complete(_query, body):
 # CLEAR COMPLETED
 # ============================================================
 
-def api_clear_completed(_query, _body):
+def api_clear_completed(
+    _query,
+    _body
+):
 
     with db() as conn:
 
         count = conn.execute(
             """
-            select count(*) as count
-            from kitchen_tickets
-            where status = 'complete'
+            SELECT COUNT(*) AS count
+            FROM kitchen_tickets
+            WHERE status = 'complete'
             """
         ).fetchone()["count"]
 
         conn.execute(
             """
-            delete from kitchen_tickets
-            where status = 'complete'
+            DELETE FROM kitchen_tickets
+            WHERE status = 'complete'
             """
         )
 
@@ -1220,6 +1413,7 @@ def kitchen_page():
 
     return """<!doctype html>
 <html lang="en">
+
 <head>
 
 <meta charset="utf-8">
@@ -1229,7 +1423,9 @@ name="viewport"
 content="width=device-width, initial-scale=1"
 >
 
-<title>The Hangar Kitchen Board</title>
+<title>
+The Hangar Kitchen Board
+</title>
 
 <style>
 
@@ -1237,7 +1433,7 @@ body{
 margin:0;
 font-family:Arial,Helvetica,sans-serif;
 background:#090909;
-color:#f5efe6
+color:#f5efe6;
 }
 
 header{
@@ -1245,47 +1441,56 @@ padding:18px 24px;
 border-bottom:2px solid #b9822d;
 display:flex;
 justify-content:space-between;
-align-items:center
+align-items:center;
 }
 
 h1{
 margin:0;
 font-size:28px;
 letter-spacing:2px;
-color:#f0b45f
+color:#f0b45f;
 }
 
 #clock{
 font-size:15px;
-color:#c9bba8
+color:#c9bba8;
+}
+
+#summary{
+font-size:14px;
+color:#c9bba8;
+padding:10px 18px;
 }
 
 main{
 padding:18px;
 display:grid;
 grid-template-columns:
-repeat(auto-fit,minmax(300px,1fr));
-gap:14px
+repeat(
+auto-fit,
+minmax(300px,1fr)
+);
+gap:14px;
 }
 
 .ticket{
 border:1px solid #b9822d;
 background:#171717;
 border-radius:8px;
-padding:16px
+padding:16px;
 }
 
 .top{
 display:flex;
 justify-content:space-between;
 gap:12px;
-align-items:start
+align-items:start;
 }
 
 .table{
 font-size:24px;
 font-weight:700;
-color:#fff
+color:#fff;
 }
 
 .status{
@@ -1294,25 +1499,25 @@ background:#f0b45f;
 padding:5px 8px;
 border-radius:999px;
 font-size:12px;
-text-transform:uppercase
+text-transform:uppercase;
 }
 
 .items{
 margin:14px 0;
 font-size:20px;
-line-height:1.35
+line-height:1.35;
 }
 
 .meta{
 color:#c9bba8;
 font-size:13px;
-line-height:1.55
+line-height:1.55;
 }
 
 .claimed{
 margin-top:8px;
 color:#f0b45f;
-font-weight:700
+font-weight:700;
 }
 
 .empty{
@@ -1320,7 +1525,7 @@ grid-column:1/-1;
 text-align:center;
 color:#c9bba8;
 font-size:28px;
-padding:90px 20px
+padding:90px 20px;
 }
 
 button{
@@ -1331,11 +1536,11 @@ border-radius:6px;
 padding:9px 12px;
 font-weight:700;
 cursor:pointer;
-margin-right:7px
+margin-right:7px;
 }
 
 button.done{
-background:#79d098
+background:#79d098;
 }
 
 </style>
@@ -1346,49 +1551,69 @@ background:#79d098
 
 <header>
 
-<h1>THE HANGAR KITCHEN</h1>
+<h1>
+THE HANGAR KITCHEN
+</h1>
 
 <div id="clock"></div>
 
 </header>
 
+<div id="summary"></div>
+
 <main id="board"></main>
 
 <script>
 
-const staff="web-staff";
+const staff = "web-staff";
 
-function itemText(t){
+function escapeHtml(value){
 
-return t.items
-.map(i=>i.name)
-.join(", ");
+return String(value ?? "")
+.replaceAll("&","&amp;")
+.replaceAll("<","&lt;")
+.replaceAll(">","&gt;")
+.replaceAll('"',"&quot;")
+.replaceAll("'","&#039;");
+
+}
+
+function itemText(ticket){
+
+return (ticket.items || [])
+.map(item => escapeHtml(item.name))
+.join("<br>");
 
 }
 
 async function action(path,ticketId){
 
-const res=await fetch(path,{
+try{
 
+const res = await fetch(
+path,
+{
 method:"POST",
-
 headers:{
-"Content-Type":"application/json"
+"Content-Type":
+"application/json"
 },
-
 body:JSON.stringify({
 
 ticket_id:ticketId,
 
-staff_avatar_id:staff,
+staff_avatar_id:
+staff,
 
-staff_avatar_name:"Kitchen Board"
+staff_avatar_name:
+"Kitchen Board"
 
 })
+}
+);
 
-});
-
-const data=await res.json();
+const data =
+await res.json();
 
 if(!data.ok){
 
@@ -1399,16 +1624,26 @@ data.error ||
 
 }
 
-load();
+await load();
+
+}catch(error){
+
+alert(
+"Kitchen server connection failed."
+);
+
+}
 
 }
 
 async function load(){
 
+const clock =
 document.getElementById(
 "clock"
-).textContent=
+);
 
+clock.textContent =
 new Intl.DateTimeFormat(
 "en-US",
 {
@@ -1417,84 +1652,113 @@ timeZone:
 dateStyle:"medium",
 timeStyle:"medium"
 }
-).format(new Date())
-+" PT";
+).format(
+new Date()
+)
++ " PT";
 
-const res=await fetch(
-"/api/kitchen/tickets"
+try{
+
+const res =
+await fetch(
+"/api/kitchen/tickets?limit=100&offset=0"
 );
 
-const data=await res.json();
+const data =
+await res.json();
 
-const tickets=
-(data.tickets||[])
+if(!data.ok){
+
+throw new Error(
+data.error ||
+"Kitchen API error"
+);
+
+}
+
+const tickets =
+(data.tickets || [])
 .filter(
-t=>t.status!=="complete"
+ticket =>
+ticket.status !== "complete"
 );
 
-const board=
+const board =
 document.getElementById(
 "board"
 );
 
+const summary =
+document.getElementById(
+"summary"
+);
+
+summary.textContent =
+"Open Orders: "
++ tickets.length;
+
 if(!tickets.length){
 
-board.innerHTML=
+board.innerHTML =
 '<div class="empty">No paid orders waiting.</div>';
 
 return;
 
 }
 
-board.innerHTML=
-
-tickets.map(t=>`
+board.innerHTML =
+tickets.map(
+ticket => `
 
 <section class="ticket">
 
 <div class="top">
 
 <div class="table">
-TABLE ${t.table_id}
+TABLE ${escapeHtml(ticket.table_id)}
 </div>
 
 <div class="status">
-${t.status}
+${escapeHtml(ticket.status)}
 </div>
 
 </div>
 
 <div class="items">
-${itemText(t)}
+${itemText(ticket)}
 </div>
 
 <div class="meta">
 
 Guest:
-${t.avatar_name||"Guest"}
-
+${escapeHtml(ticket.avatar_name || "Guest")}
 <br>
 
 Amount:
-L$${t.amount_linden}
-
+L$${escapeHtml(ticket.amount_linden)}
 <br>
 
 Received:
-${t.created_at_pacific}
+${escapeHtml(ticket.created_at_pacific)}
 
 </div>
 
 ${
-t.claimed_by_name
+ticket.claimed_by_name
 ?
-`<div class="claimed">
+`
+<div class="claimed">
+
 Claimed by:
-${t.claimed_by_name}
+${escapeHtml(ticket.claimed_by_name)}
+
 <br>
+
 Claimed:
-${t.claimed_at_pacific}
-</div>`
+${escapeHtml(ticket.claimed_at_pacific)}
+
+</div>
+`
 :
 ""
 }
@@ -1502,15 +1766,18 @@ ${t.claimed_at_pacific}
 <p>
 
 ${
-t.status==="open"
+ticket.status === "open"
 ?
-`<button
+`
+<button
 onclick="action(
 '/api/kitchen/claim',
-'${t.id}'
-)">
+'${ticket.id}'
+)"
+>
 Claim
-</button>`
+</button>
+`
 :
 ""
 }
@@ -1519,8 +1786,9 @@ Claim
 class="done"
 onclick="action(
 '/api/kitchen/complete',
-'${t.id}'
-)">
+'${ticket.id}'
+)"
+>
 Complete
 </button>
 
@@ -1528,7 +1796,23 @@ Complete
 
 </section>
 
-`).join("");
+`
+).join("");
+
+}catch(error){
+
+document.getElementById(
+"board"
+).innerHTML =
+`
+<div class="empty">
+Kitchen server error.
+<br><br>
+${escapeHtml(error.message)}
+</div>
+`;
+
+}
 
 }
 
@@ -1542,6 +1826,7 @@ load,
 </script>
 
 </body>
+
 </html>"""
 
 
@@ -1569,10 +1854,6 @@ ROUTES = {
     ("GET", "/api/kitchen/tickets"):
         api_tickets,
 
-    # NEW COMPACT SECOND LIFE CONTROLLER ENDPOINT
-    ("GET", "/api/kitchen/controller"):
-        api_controller_tickets,
-
     ("POST", "/api/kitchen/claim"):
         api_claim,
 
@@ -1581,7 +1862,6 @@ ROUTES = {
 
     ("POST", "/api/kitchen/clear-completed"):
         api_clear_completed,
-
 }
 
 
@@ -1589,7 +1869,9 @@ ROUTES = {
 # HTTP HANDLER
 # ============================================================
 
-class Handler(BaseHTTPRequestHandler):
+class Handler(
+    BaseHTTPRequestHandler
+):
 
     def send_json(
         self,
@@ -1599,9 +1881,13 @@ class Handler(BaseHTTPRequestHandler):
 
         raw = json.dumps(
             payload
-        ).encode("utf-8")
+        ).encode(
+            "utf-8"
+        )
 
-        self.send_response(status)
+        self.send_response(
+            status
+        )
 
         self.send_header(
             "Content-Type",
@@ -1609,22 +1895,34 @@ class Handler(BaseHTTPRequestHandler):
         )
 
         self.send_header(
+            "Cache-Control",
+            "no-store"
+        )
+
+        self.send_header(
             "Content-Length",
             str(len(raw))
         )
 
         self.end_headers()
 
-        self.wfile.write(raw)
+        self.wfile.write(
+            raw
+        )
 
 
-    def send_html(self, html):
+    def send_html(
+        self,
+        html
+    ):
 
         raw = html.encode(
             "utf-8"
         )
 
-        self.send_response(200)
+        self.send_response(
+            200
+        )
 
         self.send_header(
             "Content-Type",
@@ -1632,13 +1930,20 @@ class Handler(BaseHTTPRequestHandler):
         )
 
         self.send_header(
+            "Cache-Control",
+            "no-store"
+        )
+
+        self.send_header(
             "Content-Length",
             str(len(raw))
         )
 
         self.end_headers()
 
-        self.wfile.write(raw)
+        self.wfile.write(
+            raw
+        )
 
 
     def handle_request(
@@ -1650,9 +1955,8 @@ class Handler(BaseHTTPRequestHandler):
             self.path
         )
 
-
         # ----------------------------------------------------
-        # KITCHEN PAGE
+        # Kitchen page
         # ----------------------------------------------------
 
         if (
@@ -1671,7 +1975,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
         # ----------------------------------------------------
-        # HEALTH
+        # Health
         # ----------------------------------------------------
 
         if (
@@ -1692,7 +1996,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
         # ----------------------------------------------------
-        # ROUTE
+        # Route
         # ----------------------------------------------------
 
         route = ROUTES.get(
@@ -1738,7 +2042,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
         # ----------------------------------------------------
-        # EXECUTE
+        # Execute route
         # ----------------------------------------------------
 
         try:
@@ -1761,14 +2065,30 @@ class Handler(BaseHTTPRequestHandler):
                 payload
             )
 
+        except json.JSONDecodeError:
+
+            self.send_json(
+                400,
+                {
+                    "ok": False,
+                    "error":
+                        "invalid JSON request"
+                }
+            )
+
         except Exception as exc:
+
+            print(
+                "SERVER ERROR:",
+                repr(exc)
+            )
 
             self.send_json(
                 500,
                 {
                     "ok": False,
                     "error":
-                        str(exc)
+                        "internal server error"
                 }
             )
 
@@ -1811,12 +2131,16 @@ if __name__ == "__main__":
     )
 
     server = ThreadingHTTPServer(
-        ("0.0.0.0", port),
+        (
+            "0.0.0.0",
+            port
+        ),
         Handler
     )
 
     print(
-        f"Hangar kiosk running on port {port}"
+        "Hangar kiosk running on port "
+        + str(port)
     )
 
     server.serve_forever()
