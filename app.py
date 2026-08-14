@@ -9,16 +9,13 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
+
 # ============================================================
-# THE HANGAR KIOSK / KITCHEN BACKEND
+# THE HANGAR KIOSK BACKEND
+# TABLE-SPECIFIC TAP-TO-PAY VERSION
 # ============================================================
 
-# Render provides a working directory, but some test environments
-# do not provide __file__.
-try:
-    BASE_DIR = Path(__file__).resolve().parent
-except NameError:
-    BASE_DIR = Path.cwd()
+BASE_DIR = Path(os.environ.get("HANGAR_BASE_DIR", ".")).resolve()
 
 DB_PATH = Path(
     os.environ.get(
@@ -30,6 +27,11 @@ DB_PATH = Path(
 API_KEY = os.environ.get("HANGAR_API_KEY", "")
 
 PACIFIC = ZoneInfo("America/Los_Angeles")
+
+
+# ============================================================
+# MENU
+# ============================================================
 
 MENU = [
     ("wings12", "12 Piece Wings", 1),
@@ -64,11 +66,8 @@ def now():
 
 
 def pacific_time(timestamp):
-    if not timestamp:
-        return None
-
     dt = datetime.fromtimestamp(
-        int(timestamp),
+        timestamp,
         timezone.utc
     ).astimezone(PACIFIC)
 
@@ -85,6 +84,10 @@ def make_id(prefix):
     )
 
 
+# ============================================================
+# DATABASE COLUMN UPGRADE
+# ============================================================
+
 def ensure_column(
     conn,
     table_name,
@@ -94,18 +97,16 @@ def ensure_column(
     columns = [
         row["name"]
         for row in conn.execute(
-            "PRAGMA table_info(" + table_name + ")"
+            f"PRAGMA table_info({table_name})"
         )
     ]
 
     if column_name not in columns:
         conn.execute(
-            "ALTER TABLE "
-            + table_name
-            + " ADD COLUMN "
-            + column_name
-            + " "
-            + column_type
+            f"""
+            ALTER TABLE {table_name}
+            ADD COLUMN {column_name} {column_type}
+            """
         )
 
 
@@ -117,64 +118,69 @@ def init_db():
 
     with db() as conn:
 
-        conn.executescript("""
-        CREATE TABLE IF NOT EXISTS menu_items (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            price_linden INTEGER NOT NULL,
-            available INTEGER NOT NULL DEFAULT 1
-        );
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS menu_items (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                price_linden INTEGER NOT NULL,
+                available INTEGER NOT NULL DEFAULT 1
+            );
 
-        CREATE TABLE IF NOT EXISTS carts (
-            id TEXT PRIMARY KEY,
-            table_id TEXT NOT NULL,
-            avatar_id TEXT NOT NULL,
-            avatar_name TEXT,
-            status TEXT NOT NULL,
-            created_at INTEGER NOT NULL
-        );
+            CREATE TABLE IF NOT EXISTS carts (
+                id TEXT PRIMARY KEY,
+                table_id TEXT NOT NULL,
+                avatar_id TEXT NOT NULL,
+                avatar_name TEXT,
+                status TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
 
-        CREATE TABLE IF NOT EXISTS cart_items (
-            id TEXT PRIMARY KEY,
-            cart_id TEXT NOT NULL,
-            item_id TEXT NOT NULL,
-            name TEXT NOT NULL,
-            price_linden INTEGER NOT NULL
-        );
+            CREATE TABLE IF NOT EXISTS cart_items (
+                id TEXT PRIMARY KEY,
+                cart_id TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                price_linden INTEGER NOT NULL
+            );
 
-        CREATE TABLE IF NOT EXISTS bills (
-            id TEXT PRIMARY KEY,
-            payment_id TEXT UNIQUE NOT NULL,
-            cart_id TEXT NOT NULL,
-            table_id TEXT NOT NULL,
-            avatar_id TEXT NOT NULL,
-            avatar_name TEXT,
-            amount_linden INTEGER NOT NULL,
-            status TEXT NOT NULL,
-            transaction_id TEXT,
-            created_at INTEGER NOT NULL
-        );
+            CREATE TABLE IF NOT EXISTS bills (
+                id TEXT PRIMARY KEY,
+                payment_id TEXT UNIQUE NOT NULL,
+                cart_id TEXT NOT NULL,
+                table_id TEXT NOT NULL,
+                avatar_id TEXT NOT NULL,
+                avatar_name TEXT,
+                amount_linden INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                transaction_id TEXT,
+                created_at INTEGER NOT NULL
+            );
 
-        CREATE TABLE IF NOT EXISTS kitchen_tickets (
-            id TEXT PRIMARY KEY,
-            bill_id TEXT UNIQUE NOT NULL,
-            table_id TEXT NOT NULL,
-            avatar_id TEXT NOT NULL,
-            avatar_name TEXT,
-            items TEXT NOT NULL,
-            amount_linden INTEGER NOT NULL,
-            status TEXT NOT NULL,
-            claimed_by TEXT,
-            claimed_by_name TEXT,
-            claimed_at INTEGER,
-            completed_by TEXT,
-            completed_by_name TEXT,
-            completed_at INTEGER,
-            created_at INTEGER NOT NULL
-        );
-        """)
+            CREATE TABLE IF NOT EXISTS kitchen_tickets (
+                id TEXT PRIMARY KEY,
+                bill_id TEXT UNIQUE NOT NULL,
+                table_id TEXT NOT NULL,
+                avatar_id TEXT NOT NULL,
+                avatar_name TEXT,
+                items TEXT NOT NULL,
+                amount_linden INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                claimed_by TEXT,
+                claimed_by_name TEXT,
+                claimed_at INTEGER,
+                completed_by TEXT,
+                completed_by_name TEXT,
+                completed_at INTEGER,
+                created_at INTEGER NOT NULL
+            );
+            """
+        )
 
+        # ----------------------------------------------------
         # Existing database upgrades
+        # ----------------------------------------------------
+
         ensure_column(
             conn,
             "carts",
@@ -231,18 +237,16 @@ def init_db():
             "INTEGER"
         )
 
-        # Make sure the menu exists.
+        # ----------------------------------------------------
+        # Menu
+        # ----------------------------------------------------
+
         for item_id, name, price in MENU:
 
             conn.execute(
                 """
                 INSERT INTO menu_items
-                (
-                    id,
-                    name,
-                    price_linden,
-                    available
-                )
+                (id, name, price_linden, available)
                 VALUES (?, ?, ?, 1)
 
                 ON CONFLICT(id)
@@ -260,7 +264,7 @@ def init_db():
 
 
 # ============================================================
-# HELPERS
+# GENERAL HELPERS
 # ============================================================
 
 def rows_to_dicts(rows):
@@ -284,7 +288,9 @@ def read_body(handler):
 
     raw = handler.rfile.read(
         length
-    ).decode("utf-8")
+    ).decode(
+        "utf-8"
+    )
 
     if not raw:
         return {}
@@ -304,11 +310,13 @@ def ok(payload=None, status=200):
     return status, data
 
 
-def err(message, status=400):
-
+def err(
+    message,
+    status=400
+):
     return status, {
         "ok": False,
-        "error": str(message)
+        "error": message
     }
 
 
@@ -368,7 +376,9 @@ def get_or_create_cart(
 
         return cart["id"]
 
-    cart_id = make_id("cart")
+    cart_id = make_id(
+        "cart"
+    )
 
     conn.execute(
         """
@@ -441,7 +451,9 @@ def create_ticket(
         bill["cart_id"]
     )
 
-    ticket_id = make_id("kit")
+    ticket_id = make_id(
+        "kit"
+    )
 
     conn.execute(
         """
@@ -476,7 +488,8 @@ def create_ticket(
             bill["id"],
             bill["table_id"],
             bill["avatar_id"],
-            bill["avatar_name"] or bill["avatar_id"],
+            bill["avatar_name"]
+                or bill["avatar_id"],
             json.dumps(items),
             bill["amount_linden"],
             now()
@@ -496,56 +509,13 @@ def create_ticket(
 
 
 # ============================================================
-# SERIALIZE TICKET
+# MENU API
 # ============================================================
 
-def serialize_ticket(ticket):
-
-    ticket = dict(ticket)
-
-    try:
-        ticket["items"] = json.loads(
-            ticket.get("items") or "[]"
-        )
-    except Exception:
-        ticket["items"] = []
-
-    ticket["created_at_pacific"] = pacific_time(
-        ticket.get("created_at")
-    )
-
-    ticket["claimed_at_pacific"] = pacific_time(
-        ticket.get("claimed_at")
-    )
-
-    ticket["completed_at_pacific"] = pacific_time(
-        ticket.get("completed_at")
-    )
-
-    # These IDs do not need to go to the controller.
-    ticket.pop(
-        "avatar_id",
-        None
-    )
-
-    ticket.pop(
-        "claimed_by",
-        None
-    )
-
-    ticket.pop(
-        "completed_by",
-        None
-    )
-
-    return ticket
-
-
-# ============================================================
-# MENU
-# ============================================================
-
-def api_menu(query, body):
+def api_menu(
+    _query,
+    _body
+):
 
     with db() as conn:
 
@@ -560,25 +530,39 @@ def api_menu(query, body):
             )
         )
 
-    return ok({
-        "menu_version": 1,
-        "items": items
-    })
+    return ok(
+        {
+            "menu_version": 1,
+            "items": items
+        }
+    )
 
 
 # ============================================================
 # ADD TO CART
 # ============================================================
 
-def api_cart_add(query, body):
+def api_cart_add(
+    _query,
+    body
+):
 
-    table_id = body.get("table_id")
-    avatar_id = body.get("avatar_id")
+    table_id = body.get(
+        "table_id"
+    )
+
+    avatar_id = body.get(
+        "avatar_id"
+    )
+
     avatar_name = (
         body.get("avatar_name")
         or avatar_id
     )
-    item_id = body.get("item_id")
+
+    item_id = body.get(
+        "item_id"
+    )
 
     if not table_id:
         return err(
@@ -646,25 +630,40 @@ def api_cart_add(query, body):
             cart_id
         )
 
-    return ok({
-        "cart": {
-            "id": cart_id,
-            "table_id": table_id,
-            "avatar_id": avatar_id,
-            "avatar_name": avatar_name,
-            "items": items
+    return ok(
+        {
+            "cart": {
+                "id": cart_id,
+                "table_id": table_id,
+                "avatar_id": avatar_id,
+                "avatar_name": avatar_name,
+                "items": items
+            }
         }
-    })
+    )
 
 
 # ============================================================
 # PLACE ORDER
 # ============================================================
 
-def api_order_place(query, body):
+def api_order_place(
+    _query,
+    body
+):
 
-    table_id = body.get("table_id")
-    avatar_id = body.get("avatar_id")
+    table_id = body.get(
+        "table_id"
+    )
+
+    avatar_id = body.get(
+        "avatar_id"
+    )
+
+    avatar_name = (
+        body.get("avatar_name")
+        or avatar_id
+    )
 
     if not table_id:
         return err(
@@ -677,6 +676,11 @@ def api_order_place(query, body):
         )
 
     with db() as conn:
+
+        # ----------------------------------------------------
+        # Prevent duplicate pending payment for same
+        # customer/table.
+        # ----------------------------------------------------
 
         pending = conn.execute(
             """
@@ -693,9 +697,14 @@ def api_order_place(query, body):
         ).fetchone()
 
         if pending:
-            return ok({
-                "bill": dict(pending)
-            })
+
+            return ok(
+                {
+                    "bill": dict(
+                        pending
+                    )
+                }
+            )
 
         cart = conn.execute(
             """
@@ -733,8 +742,13 @@ def api_order_place(query, body):
             for item in items
         )
 
-        bill_id = make_id("bill")
-        payment_id = make_id("pay")
+        bill_id = make_id(
+            "bill"
+        )
+
+        payment_id = make_id(
+            "pay"
+        )
 
         conn.execute(
             """
@@ -757,13 +771,12 @@ def api_order_place(query, body):
                 avatar_name,
                 amount_linden,
                 status,
-                transaction_id,
                 created_at
             )
             VALUES (
-                ?, ?, ?, ?, ?, ?,
-                ?, 'pending_payment',
-                NULL, ?
+                ?, ?, ?, ?, ?, ?, ?,
+                'pending_payment',
+                ?
             )
             """,
             (
@@ -772,7 +785,7 @@ def api_order_place(query, body):
                 cart["id"],
                 table_id,
                 avatar_id,
-                cart["avatar_name"] or avatar_id,
+                avatar_name,
                 amount,
                 now()
             )
@@ -789,18 +802,26 @@ def api_order_place(query, body):
             ).fetchone()
         )
 
-    return ok({
-        "bill": bill
-    })
+    return ok(
+        {
+            "bill": bill
+        }
+    )
 
 
 # ============================================================
-# PENDING PAYMENTS
+# PAY PENDING
+#
+# IMPORTANT:
+# avatar_id AND table_id are BOTH REQUIRED.
+#
+# This prevents a Table-05 bill from appearing on the
+# Table-02 Tap-to-Pay.
 # ============================================================
 
 def api_pay_pending(
     query,
-    body
+    _body
 ):
 
     avatar_id = query.get(
@@ -808,9 +829,19 @@ def api_pay_pending(
         [""]
     )[0]
 
+    table_id = query.get(
+        "table_id",
+        [""]
+    )[0]
+
     if not avatar_id:
         return err(
             "avatar_id is required"
+        )
+
+    if not table_id:
+        return err(
+            "table_id is required"
         )
 
     with db() as conn:
@@ -822,30 +853,45 @@ def api_pay_pending(
                     payment_id,
                     table_id,
                     avatar_id,
-                    avatar_name,
                     amount_linden,
-                    status,
-                    created_at
+                    status
                 FROM bills
                 WHERE avatar_id = ?
+                AND table_id = ?
                 AND status = 'pending_payment'
                 ORDER BY created_at ASC
                 """,
-                (avatar_id,)
+                (
+                    avatar_id,
+                    table_id
+                )
             )
         )
 
-    return ok({
-        "bills": bills
-    })
+    return ok(
+        {
+            "table_id": table_id,
+            "bills": bills
+        }
+    )
 
 
 # ============================================================
 # CONFIRM PAYMENT
+#
+# IMPORTANT:
+# The backend verifies:
+#   payment ID
+#   avatar ID
+#   table ID
+#   payment amount
+#
+# This prevents a payment selected on one table's terminal
+# from being submitted against another table's bill.
 # ============================================================
 
 def api_pay_confirm(
-    query,
+    _query,
     body
 ):
 
@@ -909,17 +955,29 @@ def api_pay_confirm(
 
         bill = dict(bill)
 
-        if bill["table_id"] != table_id:
-            return err(
-                "table does not match bill",
-                403
-            )
+        # ----------------------------------------------------
+        # CUSTOMER CHECK
+        # ----------------------------------------------------
 
         if bill["avatar_id"] != avatar_id:
             return err(
-                "avatar does not match bill",
+                "payment customer does not match bill",
                 403
             )
+
+        # ----------------------------------------------------
+        # TABLE CHECK
+        # ----------------------------------------------------
+
+        if bill["table_id"] != table_id:
+            return err(
+                "payment table does not match bill",
+                403
+            )
+
+        # ----------------------------------------------------
+        # AMOUNT CHECK
+        # ----------------------------------------------------
 
         if int(amount) != int(
             bill["amount_linden"]
@@ -928,6 +986,10 @@ def api_pay_confirm(
                 "payment amount does not match bill",
                 409
             )
+
+        # ----------------------------------------------------
+        # Already paid?
+        # ----------------------------------------------------
 
         if bill["status"] != "paid":
 
@@ -951,29 +1013,106 @@ def api_pay_confirm(
                 SET status = 'paid'
                 WHERE id = ?
                 """,
-                (bill["cart_id"],)
+                (
+                    bill["cart_id"],
+                )
             )
 
             bill["status"] = "paid"
+            bill["transaction_id"] = transaction_id
+
+        # ----------------------------------------------------
+        # CREATE KITCHEN TICKET
+        # ----------------------------------------------------
 
         ticket = create_ticket(
             conn,
             bill
         )
 
-    return ok({
-        "bill": bill,
-        "ticket": serialize_ticket(ticket)
-    })
+    return ok(
+        {
+            "bill": bill,
+            "ticket": ticket
+        }
+    )
 
 
 # ============================================================
-# GET KITCHEN TICKETS
+# SERIALIZE KITCHEN TICKET
+# ============================================================
+
+def serialize_ticket(ticket):
+
+    ticket = dict(ticket)
+
+    try:
+        ticket["items"] = json.loads(
+            ticket["items"]
+        )
+    except Exception:
+        ticket["items"] = []
+
+    ticket[
+        "created_at_pacific"
+    ] = pacific_time(
+        ticket["created_at"]
+    )
+
+    if ticket.get("claimed_at"):
+
+        ticket[
+            "claimed_at_pacific"
+        ] = pacific_time(
+            ticket["claimed_at"]
+        )
+
+    else:
+
+        ticket[
+            "claimed_at_pacific"
+        ] = None
+
+    if ticket.get("completed_at"):
+
+        ticket[
+            "completed_at_pacific"
+        ] = pacific_time(
+            ticket["completed_at"]
+        )
+
+    else:
+
+        ticket[
+            "completed_at_pacific"
+        ] = None
+
+    # Don't expose SL UUIDs to kitchen UI.
+    ticket.pop(
+        "avatar_id",
+        None
+    )
+
+    ticket.pop(
+        "claimed_by",
+        None
+    )
+
+    ticket.pop(
+        "completed_by",
+        None
+    )
+
+    return ticket
+
+
+# ============================================================
+# KITCHEN TICKETS
 # ============================================================
 
 def api_tickets(
-    query,
-    body
+    _query,
+    _body
 ):
 
     with db() as conn:
@@ -982,19 +1121,21 @@ def api_tickets(
             """
             SELECT *
             FROM kitchen_tickets
-            WHERE status != 'complete'
-            ORDER BY created_at ASC
+            ORDER BY created_at DESC
             """
         ).fetchall()
 
-    return ok({
-        "timezone": "America/Los_Angeles",
-        "count": len(tickets),
-        "tickets": [
-            serialize_ticket(ticket)
-            for ticket in tickets
-        ]
-    })
+    return ok(
+        {
+            "timezone":
+                "America/Los_Angeles",
+
+            "tickets": [
+                serialize_ticket(ticket)
+                for ticket in tickets
+            ]
+        }
+    )
 
 
 # ============================================================
@@ -1002,7 +1143,7 @@ def api_tickets(
 # ============================================================
 
 def api_claim(
-    query,
+    _query,
     body
 ):
 
@@ -1015,7 +1156,9 @@ def api_claim(
     )
 
     staff_avatar_name = (
-        body.get("staff_avatar_name")
+        body.get(
+            "staff_avatar_name"
+        )
         or staff_avatar_id
     )
 
@@ -1094,11 +1237,12 @@ def api_claim(
             (ticket_id,)
         ).fetchone()
 
-    return ok({
-        "ticket": serialize_ticket(
-            updated
-        )
-    })
+    return ok(
+        {
+            "ticket":
+                serialize_ticket(updated)
+        }
+    )
 
 
 # ============================================================
@@ -1106,7 +1250,7 @@ def api_claim(
 # ============================================================
 
 def api_complete(
-    query,
+    _query,
     body
 ):
 
@@ -1119,7 +1263,9 @@ def api_complete(
     )
 
     staff_avatar_name = (
-        body.get("staff_avatar_name")
+        body.get(
+            "staff_avatar_name"
+        )
         or staff_avatar_id
     )
 
@@ -1151,11 +1297,13 @@ def api_complete(
             )
 
         if ticket["status"] == "complete":
-            return ok({
-                "ticket": serialize_ticket(
-                    ticket
-                )
-            })
+
+            return ok(
+                {
+                    "ticket":
+                        serialize_ticket(ticket)
+                }
+            )
 
         if (
             ticket["claimed_by"]
@@ -1200,11 +1348,12 @@ def api_complete(
             (ticket_id,)
         ).fetchone()
 
-    return ok({
-        "ticket": serialize_ticket(
-            updated
-        )
-    })
+    return ok(
+        {
+            "ticket":
+                serialize_ticket(updated)
+        }
+    )
 
 
 # ============================================================
@@ -1212,21 +1361,19 @@ def api_complete(
 # ============================================================
 
 def api_clear_completed(
-    query,
-    body
+    _query,
+    _body
 ):
 
     with db() as conn:
 
-        result = conn.execute(
+        count = conn.execute(
             """
             SELECT COUNT(*) AS count
             FROM kitchen_tickets
             WHERE status = 'complete'
             """
-        ).fetchone()
-
-        count = result["count"]
+        ).fetchone()["count"]
 
         conn.execute(
             """
@@ -1235,22 +1382,25 @@ def api_clear_completed(
             """
         )
 
-    return ok({
-        "deleted": count
-    })
+    return ok(
+        {
+            "deleted": count
+        }
+    )
 
 
 # ============================================================
-# KITCHEN WEB BOARD
+# KITCHEN WEB PAGE
 # ============================================================
 
 def kitchen_page():
 
     return """<!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport"
+content="width=device-width, initial-scale=1">
 
 <title>The Hangar Kitchen</title>
 
@@ -1258,89 +1408,107 @@ def kitchen_page():
 
 body{
 margin:0;
+font-family:Arial,Helvetica,sans-serif;
 background:#090909;
 color:#f5efe6;
-font-family:Arial,Helvetica,sans-serif;
 }
 
 header{
-padding:18px;
+padding:18px 24px;
 border-bottom:2px solid #b9822d;
 display:flex;
 justify-content:space-between;
+align-items:center;
 }
 
 h1{
 margin:0;
+font-size:28px;
+letter-spacing:2px;
 color:#f0b45f;
 }
 
-#board{
+#clock{
+font-size:15px;
+color:#c9bba8;
+}
+
+main{
 padding:18px;
 display:grid;
 grid-template-columns:
 repeat(auto-fit,minmax(300px,1fr));
-gap:15px;
+gap:14px;
 }
 
 .ticket{
-background:#171717;
 border:1px solid #b9822d;
+background:#171717;
 border-radius:8px;
 padding:16px;
 }
 
+.top{
+display:flex;
+justify-content:space-between;
+gap:12px;
+align-items:start;
+}
+
 .table{
-font-size:25px;
-font-weight:bold;
+font-size:24px;
+font-weight:700;
+color:#fff;
 }
 
 .status{
-display:inline-block;
-margin-top:8px;
-padding:5px 9px;
-border-radius:20px;
+color:#101010;
 background:#f0b45f;
-color:#111;
+padding:5px 8px;
+border-radius:999px;
 font-size:12px;
-font-weight:bold;
+text-transform:uppercase;
 }
 
 .items{
-margin-top:15px;
-font-size:19px;
-line-height:1.5;
+margin:14px 0;
+font-size:20px;
+line-height:1.35;
 }
 
 .meta{
-margin-top:12px;
 color:#c9bba8;
 font-size:13px;
-line-height:1.6;
+line-height:1.55;
 }
 
 .claimed{
-margin-top:10px;
+margin-top:8px;
 color:#f0b45f;
-font-weight:bold;
-}
-
-button{
-margin-top:14px;
-margin-right:7px;
-padding:9px 12px;
-border:0;
-border-radius:6px;
-font-weight:bold;
-cursor:pointer;
+font-weight:700;
 }
 
 .empty{
 grid-column:1/-1;
 text-align:center;
-padding:80px;
-font-size:25px;
 color:#c9bba8;
+font-size:28px;
+padding:90px 20px;
+}
+
+button{
+background:#f0b45f;
+border:0;
+color:#111;
+border-radius:6px;
+padding:9px 12px;
+font-weight:700;
+cursor:pointer;
+margin-right:7px;
+}
+
+button.done{
+background:#79d098;
 }
 
 </style>
@@ -1349,207 +1517,240 @@ color:#c9bba8;
 <body>
 
 <header>
+
 <h1>THE HANGAR KITCHEN</h1>
+
 <div id="clock"></div>
+
 </header>
 
 <main id="board"></main>
 
 <script>
 
-async function action(path,id){
+const staff = "web-staff";
 
-    const res=await fetch(
-        path,
-        {
-            method:"POST",
-            headers:{
-                "Content-Type":
-                "application/json"
-            },
-            body:JSON.stringify({
-                ticket_id:id,
-                staff_avatar_id:"web-staff",
-                staff_avatar_name:
-                "Kitchen Board"
-            })
+function itemText(ticket){
+
+    return (ticket.items || [])
+        .map(item => item.name)
+        .join(", ");
+
+}
+
+async function action(path,ticketId){
+
+    try{
+
+        const response =
+            await fetch(
+                path,
+                {
+                    method:"POST",
+
+                    headers:{
+                        "Content-Type":
+                        "application/json"
+                    },
+
+                    body:JSON.stringify({
+                        ticket_id:ticketId,
+                        staff_avatar_id:staff,
+                        staff_avatar_name:
+                        "Kitchen Board"
+                    })
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if(!data.ok){
+
+            alert(
+                data.error ||
+                "Action failed"
+            );
+
         }
-    );
 
-    const data=await res.json();
+    }
+    catch(error){
 
-    if(!data.ok){
         alert(
-            data.error ||
-            "Action failed"
+            "Kitchen server error."
         );
+
     }
 
     load();
-}
 
+}
 
 async function load(){
 
-    document.getElementById(
-        "clock"
-    ).textContent =
+    document
+        .getElementById("clock")
+        .textContent =
         new Intl.DateTimeFormat(
             "en-US",
             {
                 timeZone:
                 "America/Los_Angeles",
+
                 dateStyle:"medium",
                 timeStyle:"medium"
             }
         ).format(new Date())
         + " PT";
 
-
     try{
 
-        const res=await fetch(
-            "/api/kitchen/tickets"
-        );
+        const response =
+            await fetch(
+                "/api/kitchen/tickets"
+            );
 
-        const data=await res.json();
+        const data =
+            await response.json();
 
-        if(
-            !data ||
-            data.ok !== true ||
-            !Array.isArray(data.tickets)
-        ){
+        if(!data.ok){
 
-            document.getElementById(
-                "board"
-            ).innerHTML =
-                '<div class="empty">'
-                + 'Kitchen server returned '
-                + 'invalid data.'
-                + '</div>';
+            throw new Error(
+                data.error ||
+                "Invalid response"
+            );
 
-            return;
         }
 
-
         const tickets =
-            data.tickets;
+            (data.tickets || [])
+            .filter(
+                ticket =>
+                ticket.status !==
+                "complete"
+            );
 
+        const board =
+            document.getElementById(
+                "board"
+            );
 
         if(!tickets.length){
 
-            document.getElementById(
-                "board"
-            ).innerHTML =
-                '<div class="empty">'
-                + 'No paid orders waiting.'
-                + '</div>';
+            board.innerHTML =
+                '<div class="empty">' +
+                'No paid orders waiting.' +
+                '</div>';
 
             return;
+
         }
 
+        board.innerHTML =
+            tickets.map(ticket => `
 
-        document.getElementById(
-            "board"
-        ).innerHTML =
-            tickets.map(
-                function(t){
+                <section class="ticket">
 
-                    const items =
-                        Array.isArray(t.items)
-                        ? t.items.map(
-                            function(i){
-                                return i.name;
-                            }
-                        ).join(", ")
-                        : "No items";
+                    <div class="top">
 
+                        <div class="table">
+                            TABLE
+                            ${ticket.table_id}
+                        </div>
 
-                    let buttons = "";
+                        <div class="status">
+                            ${ticket.status}
+                        </div>
 
-                    if(
-                        t.status === "open"
-                    ){
-
-                        buttons +=
-                        '<button '
-                        + 'onclick="action('
-                        + "'/api/kitchen/claim','"
-                        + t.id
-                        + "')"
-                        + '">Claim</button>';
-                    }
-
-
-                    buttons +=
-                    '<button '
-                    + 'onclick="action('
-                    + "'/api/kitchen/complete','"
-                    + t.id
-                    + "')"
-                    + '>Complete</button>';
-
-
-                    return `
-                    <section class="ticket">
-
-                    <div class="table">
-                    TABLE ${t.table_id}
-                    </div>
-
-                    <div class="status">
-                    ${t.status}
                     </div>
 
                     <div class="items">
-                    ${items}
+                        ${itemText(ticket)}
                     </div>
 
                     <div class="meta">
-                    Guest:
-                    ${t.avatar_name || "Guest"}
-                    <br>
-                    Amount:
-                    L$${t.amount_linden}
-                    <br>
-                    Received:
-                    ${t.created_at_pacific}
+
+                        Guest:
+                        ${ticket.avatar_name ||
+                        "Guest"}
+
+                        <br>
+
+                        Amount:
+                        L$${ticket.amount_linden}
+
+                        <br>
+
+                        Received:
+                        ${ticket.created_at_pacific}
+
                     </div>
 
                     ${
-                        t.claimed_by_name
+                        ticket.claimed_by_name
                         ?
                         `<div class="claimed">
-                        Claimed by:
-                        ${t.claimed_by_name}
-                        <br>
-                        Claimed:
-                        ${t.claimed_at_pacific}
+                            Claimed by:
+                            ${ticket.claimed_by_name}
+                            <br>
+                            Claimed:
+                            ${ticket.claimed_at_pacific}
                         </div>`
                         :
                         ""
                     }
 
-                    <div>
-                    ${buttons}
-                    </div>
+                    <p>
 
-                    </section>
-                    `;
-                }
-            ).join("");
+                        ${
+                            ticket.status ===
+                            "open"
+                            ?
+                            `<button
+                                onclick=
+                                "action(
+                                '/api/kitchen/claim',
+                                '${ticket.id}'
+                                )">
+                                Claim
+                            </button>`
+                            :
+                            ""
+                        }
 
-    }catch(error){
+                        <button
+                            class="done"
+                            onclick=
+                            "action(
+                            '/api/kitchen/complete',
+                            '${ticket.id}'
+                            )">
 
-        document.getElementById(
-            "board"
-        ).innerHTML =
-            '<div class="empty">'
-            + 'Unable to load kitchen orders.'
-            + '</div>';
+                            Complete
+
+                        </button>
+
+                    </p>
+
+                </section>
+
+            `).join("");
+
     }
-}
+    catch(error){
 
+        document
+            .getElementById("board")
+            .innerHTML =
+            '<div class="empty">' +
+            'Kitchen server returned ' +
+            'an invalid response.' +
+            '</div>';
+
+    }
+
+}
 
 load();
 
@@ -1614,9 +1815,10 @@ class Handler(
     ):
 
         raw = json.dumps(
-            payload,
-            ensure_ascii=False
-        ).encode("utf-8")
+            payload
+        ).encode(
+            "utf-8"
+        )
 
         self.send_response(
             status
@@ -1639,8 +1841,9 @@ class Handler(
 
         self.end_headers()
 
-        self.wfile.write(raw)
-
+        self.wfile.write(
+            raw
+        )
 
     def send_html(
         self,
@@ -1672,8 +1875,9 @@ class Handler(
 
         self.end_headers()
 
-        self.wfile.write(raw)
-
+        self.wfile.write(
+            raw
+        )
 
     def handle_request(
         self,
@@ -1684,7 +1888,10 @@ class Handler(
             self.path
         )
 
-        # Kitchen webpage
+        # ----------------------------------------------------
+        # Kitchen page
+        # ----------------------------------------------------
+
         if (
             method == "GET"
             and parsed.path
@@ -1697,8 +1904,10 @@ class Handler(
 
             return
 
+        # ----------------------------------------------------
+        # Health
+        # ----------------------------------------------------
 
-        # Health check
         if (
             method == "GET"
             and parsed.path == "/health"
@@ -1709,12 +1918,17 @@ class Handler(
                 {
                     "ok": True,
                     "service":
-                    "hangar-kiosk"
+                        "hangar-kiosk",
+                    "table_specific_payments":
+                        True
                 }
             )
 
             return
 
+        # ----------------------------------------------------
+        # Route
+        # ----------------------------------------------------
 
         route = ROUTES.get(
             (
@@ -1723,7 +1937,6 @@ class Handler(
             )
         )
 
-
         if not route:
 
             self.send_json(
@@ -1731,12 +1944,15 @@ class Handler(
                 {
                     "ok": False,
                     "error":
-                    "route not found"
+                        "route not found"
                 }
             )
 
             return
 
+        # ----------------------------------------------------
+        # API key
+        # ----------------------------------------------------
 
         if (
             method == "POST"
@@ -1748,12 +1964,11 @@ class Handler(
                 {
                     "ok": False,
                     "error":
-                    "missing or invalid API key"
+                        "missing or invalid API key"
                 }
             )
 
             return
-
 
         try:
 
@@ -1782,10 +1997,9 @@ class Handler(
                 {
                     "ok": False,
                     "error":
-                    str(exc)
+                        str(exc)
                 }
             )
-
 
     def do_GET(self):
 
@@ -1793,19 +2007,16 @@ class Handler(
             "GET"
         )
 
-
     def do_POST(self):
 
         self.handle_request(
             "POST"
         )
 
-
     def log_message(
         self,
         *_args
     ):
-
         return
 
 
@@ -1833,14 +2044,9 @@ if __name__ == "__main__":
     )
 
     print(
-        "Hangar kiosk running "
-        "on port "
+        "The Hangar kiosk backend "
+        "running on port "
         + str(port)
-    )
-
-    print(
-        "Database: "
-        + str(DB_PATH)
     )
 
     server.serve_forever()
