@@ -785,7 +785,9 @@ def api_order_place(
                 cart["id"],
                 table_id,
                 avatar_id,
-                avatar_name,
+                cart["avatar_name"]
+                    or avatar_name
+                    or avatar_id,
                 amount,
                 now()
             )
@@ -1111,24 +1113,87 @@ def serialize_ticket(ticket):
 # ============================================================
 
 def api_tickets(
-    _query,
+    query,
     _body
 ):
 
+    page = int(
+        query.get(
+            "page",
+            ["1"]
+        )[0]
+        or "1"
+    )
+
+    limit = int(
+        query.get(
+            "limit",
+            ["50"]
+        )[0]
+        or "50"
+    )
+
+    if page < 1:
+        page = 1
+
+    if limit < 1:
+        limit = 50
+
+    if limit > 50:
+        limit = 50
+
+    offset = (
+        page - 1
+    ) * limit
+
     with db() as conn:
+
+        total = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM kitchen_tickets
+            WHERE status != 'complete'
+            """
+        ).fetchone()["count"]
 
         tickets = conn.execute(
             """
             SELECT *
             FROM kitchen_tickets
-            ORDER BY created_at DESC
-            """
+            WHERE status != 'complete'
+            ORDER BY created_at ASC
+            LIMIT ?
+            OFFSET ?
+            """,
+            (
+                limit,
+                offset
+            )
         ).fetchall()
+
+    pages = (
+        total + limit - 1
+    ) // limit
+
+    if pages < 1:
+        pages = 1
 
     return ok(
         {
             "timezone":
                 "America/Los_Angeles",
+
+            "page":
+                page,
+
+            "limit":
+                limit,
+
+            "total":
+                total,
+
+            "pages":
+                pages,
 
             "tickets": [
                 serialize_ticket(ticket)
@@ -1530,6 +1595,17 @@ background:#79d098;
 
 const staff = "web-staff";
 
+function escapeHtml(value){
+
+    return String(value ?? "")
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
+
+}
+
 function itemText(ticket){
 
     return (ticket.items || [])
@@ -1648,7 +1724,39 @@ async function load(){
         }
 
         board.innerHTML =
-            tickets.map(ticket => `
+            tickets.map(ticket => {
+
+                const safeId =
+                    escapeHtml(ticket.id);
+
+                const safeTable =
+                    escapeHtml(ticket.table_id);
+
+                const safeStatus =
+                    escapeHtml(ticket.status);
+
+                const safeItems =
+                    escapeHtml(itemText(ticket));
+
+                const safeGuest =
+                    escapeHtml(
+                        ticket.avatar_name ||
+                        "Guest"
+                    );
+
+                const safeAmount =
+                    escapeHtml(ticket.amount_linden);
+
+                const safeReceived =
+                    escapeHtml(ticket.created_at_pacific);
+
+                const safeClaimedBy =
+                    escapeHtml(ticket.claimed_by_name || "");
+
+                const safeClaimedAt =
+                    escapeHtml(ticket.claimed_at_pacific || "");
+
+                return `
 
                 <section class="ticket">
 
@@ -1656,34 +1764,33 @@ async function load(){
 
                         <div class="table">
                             TABLE
-                            ${ticket.table_id}
+                            ${safeTable}
                         </div>
 
                         <div class="status">
-                            ${ticket.status}
+                            ${safeStatus}
                         </div>
 
                     </div>
 
                     <div class="items">
-                        ${itemText(ticket)}
+                        ${safeItems}
                     </div>
 
                     <div class="meta">
 
                         Guest:
-                        ${ticket.avatar_name ||
-                        "Guest"}
+                        ${safeGuest}
 
                         <br>
 
                         Amount:
-                        L$${ticket.amount_linden}
+                        L$${safeAmount}
 
                         <br>
 
                         Received:
-                        ${ticket.created_at_pacific}
+                        ${safeReceived}
 
                     </div>
 
@@ -1692,10 +1799,10 @@ async function load(){
                         ?
                         `<div class="claimed">
                             Claimed by:
-                            ${ticket.claimed_by_name}
+                            ${safeClaimedBy}
                             <br>
                             Claimed:
-                            ${ticket.claimed_at_pacific}
+                            ${safeClaimedAt}
                         </div>`
                         :
                         ""
@@ -1708,11 +1815,8 @@ async function load(){
                             "open"
                             ?
                             `<button
-                                onclick=
-                                "action(
-                                '/api/kitchen/claim',
-                                '${ticket.id}'
-                                )">
+                                data-action="claim"
+                                data-ticket-id="${safeId}">
                                 Claim
                             </button>`
                             :
@@ -1721,11 +1825,8 @@ async function load(){
 
                         <button
                             class="done"
-                            onclick=
-                            "action(
-                            '/api/kitchen/complete',
-                            '${ticket.id}'
-                            )">
+                            data-action="complete"
+                            data-ticket-id="${safeId}">
 
                             Complete
 
@@ -1735,7 +1836,9 @@ async function load(){
 
                 </section>
 
-            `).join("");
+            `;
+
+            }).join("");
 
     }
     catch(error){
@@ -1753,6 +1856,47 @@ async function load(){
 }
 
 load();
+
+document
+    .getElementById("board")
+    .addEventListener(
+        "click",
+        event => {
+
+            const button =
+                event.target.closest("button");
+
+            if(!button){
+                return;
+            }
+
+            const ticketId =
+                button.dataset.ticketId;
+
+            const actionName =
+                button.dataset.action;
+
+            if(!ticketId || !actionName){
+                return;
+            }
+
+            if(actionName === "claim"){
+                action(
+                    "/api/kitchen/claim",
+                    ticketId
+                );
+                return;
+            }
+
+            if(actionName === "complete"){
+                action(
+                    "/api/kitchen/complete",
+                    ticketId
+                );
+            }
+
+        }
+    );
 
 setInterval(
     load,
