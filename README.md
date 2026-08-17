@@ -34,6 +34,7 @@ API routes:
 - `GET /pay/pending?avatar_id=...&table_id=...`
 - `POST /pay/confirm`
 - `GET /api/kitchen/tickets?page=1&limit=6`
+- `GET /api/kitchen/tickets?page=1&limit=6&view=controller`
 - `POST /api/kitchen/claim`
 - `POST /api/kitchen/complete`
 - `POST /api/kitchen/clear-completed`
@@ -41,6 +42,7 @@ API routes:
 Kitchen controller notes:
 
 - The kitchen controller expects paginated ticket responses with `page`, `limit`, `total`, `pages`, and `tickets`.
+- Use `view=controller` for the Second Life kitchen controller; it returns a smaller payload that avoids SL HTTP response truncation.
 - Completed tickets are hidden from regular ticket responses.
 - Customer and staff UUIDs are not exposed on the kitchen dashboard; display names are used instead.
 - `pay/pending` is table-specific, so a Tap-to-Pay object must send both `avatar_id` and `table_id`.

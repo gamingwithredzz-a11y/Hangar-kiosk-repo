@@ -1108,6 +1108,43 @@ def serialize_ticket(ticket):
     return ticket
 
 
+def serialize_controller_ticket(ticket):
+
+    ticket = dict(ticket)
+
+    return {
+        "id":
+            ticket.get(
+                "id",
+                ""
+            ),
+
+        "table_id":
+            ticket.get(
+                "table_id",
+                ""
+            ),
+
+        "avatar_name":
+            ticket.get(
+                "avatar_name",
+                ""
+            ),
+
+        "status":
+            ticket.get(
+                "status",
+                ""
+            ),
+
+        "claimed_by_name":
+            ticket.get(
+                "claimed_by_name",
+                ""
+            ),
+    }
+
+
 # ============================================================
 # KITCHEN TICKETS
 # ============================================================
@@ -1132,6 +1169,14 @@ def api_tickets(
         )[0]
         or "50"
     )
+
+    view = (
+        query.get(
+            "view",
+            [""]
+        )[0]
+        or ""
+    ).lower()
 
     if page < 1:
         page = 1
@@ -1178,6 +1223,20 @@ def api_tickets(
     if pages < 1:
         pages = 1
 
+    if view == "controller":
+
+        ticket_list = [
+            serialize_controller_ticket(ticket)
+            for ticket in tickets
+        ]
+
+    else:
+
+        ticket_list = [
+            serialize_ticket(ticket)
+            for ticket in tickets
+        ]
+
     return ok(
         {
             "timezone":
@@ -1195,10 +1254,8 @@ def api_tickets(
             "pages":
                 pages,
 
-            "tickets": [
-                serialize_ticket(ticket)
-                for ticket in tickets
-            ]
+            "tickets":
+                ticket_list
         }
     )
 
