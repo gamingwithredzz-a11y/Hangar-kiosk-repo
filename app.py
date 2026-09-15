@@ -34,10 +34,40 @@ PACIFIC = ZoneInfo("America/Los_Angeles")
 # ============================================================
 
 MENU = [
-    ("wings12", "12 Piece Wings", 1),
+    ("wings_magnum_jerk", "12 Piece Wings - Magnum Jerk", 1),
+    ("wings_hot_honey", "12 Piece Wings - Hot Honey", 1),
+    ("wings_buffalo", "12 Piece Wings - Buffalo", 1),
+
     ("beef_tacos", "Beef Taco Platter", 1),
     ("chicken_tacos", "Chicken Taco Platter", 1),
-    ("hookah_session", "Hookah Session", 1),
+    ("oxtail_tacos", "Oxtail Taco Platter", 1),
+    ("breakfast_tacos", "Breakfast Taco Platter", 1),
+
+    ("jerk_pepper_shrimp", "Jerk Pepper Shrimp Tray", 1),
+    ("jerk_salmon_fillets", "Jerk Salmon Fillets Tray", 1),
+    ("jerk_ribs", "Jerk Ribs Tray", 1),
+    ("jerk_leg_thigh", "Jerk Leg and Thigh Tray", 1),
+    ("jerk_wings", "Jerk Wings Tray", 1),
+
+    ("water", "Water", 1),
+    ("peach_tea", "Peach Tea", 1),
+    ("lemonade", "Lemonade", 1),
+
+    ("abg_strawberry_hennessy", "ABG-Strawberry Hennessy-Tray", 1),
+    ("abg_pink_jalapeno_kiss", "ABG-Pink Jalapeno Kiss [RLV]-Tray", 1),
+    ("abg_pineapple_margarita", "ABG-Pineapple Margarita Tray", 1),
+    ("abg_pineapple_martini", "ABG-Pineapple-Martini Tray", 1),
+    ("abg_strawberry_margarita", "ABG-Strawberry Margarita Tray", 1),
+    ("abg_strawberry_martini", "ABG-StrawBerry-Martini Tray", 1),
+
+    ("hookah_mint", "Hookah Session - Mint", 1),
+    ("hookah_blueberry", "Hookah Session - Blueberry", 1),
+    ("hookah_watermelon", "Hookah Session - Watermelon", 1),
+    ("hookah_peach", "Hookah Session - Peach", 1),
+    ("hookah_grape", "Hookah Session - Grape", 1),
+    ("hookah_double_apple", "Hookah Session - Double Apple", 1),
+    ("hookah_strawberry", "Hookah Session - Strawberry", 1),
+    ("hookah_mango", "Hookah Session - Mango", 1),
 ]
 
 
@@ -240,6 +270,13 @@ def init_db():
         # ----------------------------------------------------
         # Menu
         # ----------------------------------------------------
+
+        conn.execute(
+            """
+            UPDATE menu_items
+            SET available = 0
+            """
+        )
 
         for item_id, name, price in MENU:
 
