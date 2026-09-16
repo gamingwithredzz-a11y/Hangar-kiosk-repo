@@ -1,1 +1,4 @@
 # No external packages required.
+#
+# The backend uses only Python standard-library modules:
+# http.server, sqlite3, json, uuid, pathlib, urllib.parse, datetime, and zoneinfo.
