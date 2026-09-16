@@ -25,6 +25,7 @@ DB_PATH = Path(
 )
 
 API_KEY = os.environ.get("HANGAR_API_KEY", "")
+OWNER_ACCESS_CODE = os.environ.get("HANGAR_OWNER_CODE", "")
 
 PACIFIC = ZoneInfo("America/Los_Angeles")
 
@@ -1183,6 +1184,239 @@ def serialize_controller_ticket(ticket):
 
 
 # ============================================================
+# OWNER OPERATIONS
+# ============================================================
+
+def owner_today_start():
+
+    local_now = datetime.now(
+        PACIFIC
+    )
+
+    local_start = local_now.replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+
+    return int(
+        local_start.timestamp()
+    )
+
+
+def check_owner_access(query):
+
+    if not OWNER_ACCESS_CODE:
+        return True
+
+    return (
+        query.get(
+            "owner_code",
+            [""]
+        )[0]
+        == OWNER_ACCESS_CODE
+    )
+
+
+def scalar(
+    conn,
+    sql,
+    params=()
+):
+
+    value = conn.execute(
+        sql,
+        params
+    ).fetchone()[0]
+
+    if value is None:
+        return 0
+
+    return value
+
+
+def api_owner_operations(
+    query,
+    _body
+):
+
+    if not check_owner_access(query):
+        return fail(
+            "missing or invalid owner code",
+            401
+        )
+
+    today_start = owner_today_start()
+
+    with db() as conn:
+
+        active_carts = scalar(
+            conn,
+            """
+            SELECT COUNT(*)
+            FROM carts
+            WHERE status = 'cart'
+            """
+        )
+
+        pending_bills = scalar(
+            conn,
+            """
+            SELECT COUNT(*)
+            FROM bills
+            WHERE status = 'pending_payment'
+            """
+        )
+
+        pending_linden = scalar(
+            conn,
+            """
+            SELECT SUM(amount_linden)
+            FROM bills
+            WHERE status = 'pending_payment'
+            """
+        )
+
+        open_tickets = scalar(
+            conn,
+            """
+            SELECT COUNT(*)
+            FROM kitchen_tickets
+            WHERE status = 'open'
+            """
+        )
+
+        claimed_tickets = scalar(
+            conn,
+            """
+            SELECT COUNT(*)
+            FROM kitchen_tickets
+            WHERE status = 'claimed'
+            """
+        )
+
+        kitchen_linden = scalar(
+            conn,
+            """
+            SELECT SUM(amount_linden)
+            FROM kitchen_tickets
+            WHERE status != 'complete'
+            """
+        )
+
+        completed_today = scalar(
+            conn,
+            """
+            SELECT COUNT(*)
+            FROM kitchen_tickets
+            WHERE status = 'complete'
+            AND completed_at >= ?
+            """,
+            (
+                today_start,
+            )
+        )
+
+        sales_today = scalar(
+            conn,
+            """
+            SELECT SUM(amount_linden)
+            FROM kitchen_tickets
+            WHERE status = 'complete'
+            AND completed_at >= ?
+            """,
+            (
+                today_start,
+            )
+        )
+
+        paid_today = scalar(
+            conn,
+            """
+            SELECT COUNT(*)
+            FROM bills
+            WHERE status = 'paid'
+            AND created_at >= ?
+            """,
+            (
+                today_start,
+            )
+        )
+
+        active_tables = [
+            row["table_id"]
+            for row in conn.execute(
+                """
+                SELECT DISTINCT table_id
+                FROM (
+                    SELECT table_id
+                    FROM carts
+                    WHERE status = 'cart'
+
+                    UNION
+
+                    SELECT table_id
+                    FROM bills
+                    WHERE status = 'pending_payment'
+
+                    UNION
+
+                    SELECT table_id
+                    FROM kitchen_tickets
+                    WHERE status != 'complete'
+                )
+                ORDER BY table_id
+                LIMIT 12
+                """
+            )
+        ]
+
+    return ok(
+        {
+            "updated_at_pacific":
+                pacific_time(
+                    now()
+                ),
+
+            "active_carts":
+                active_carts,
+
+            "pending_bills":
+                pending_bills,
+
+            "pending_linden":
+                pending_linden,
+
+            "open_tickets":
+                open_tickets,
+
+            "claimed_tickets":
+                claimed_tickets,
+
+            "kitchen_linden":
+                kitchen_linden,
+
+            "completed_today":
+                completed_today,
+
+            "sales_today":
+                sales_today,
+
+            "paid_bills_today":
+                paid_today,
+
+            "active_tables":
+                ", ".join(
+                    active_tables
+                )
+                if active_tables
+                else "none",
+        }
+    )
+
+
+# ============================================================
 # KITCHEN TICKETS
 # ============================================================
 
@@ -2004,6 +2238,260 @@ setInterval(
 
 
 # ============================================================
+# OWNER WEB PAGE
+# ============================================================
+
+def owner_page():
+
+    return """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport"
+content="width=device-width, initial-scale=1">
+
+<title>The Hangar Owner Ops</title>
+
+<style>
+
+*{
+box-sizing:border-box;
+}
+
+body{
+margin:0;
+font-family:Arial,Helvetica,sans-serif;
+background:#080808;
+color:#f8efe0;
+}
+
+header{
+padding:14px 18px;
+border-bottom:2px solid #b9822d;
+display:flex;
+justify-content:space-between;
+align-items:center;
+gap:12px;
+}
+
+h1{
+margin:0;
+font-size:22px;
+letter-spacing:1px;
+color:#f0b45f;
+}
+
+#updated{
+font-size:12px;
+color:#c8b79d;
+text-align:right;
+}
+
+main{
+padding:14px;
+display:grid;
+grid-template-columns:repeat(4,minmax(120px,1fr));
+gap:10px;
+}
+
+.metric{
+border:1px solid #80591f;
+background:#151515;
+border-radius:8px;
+padding:12px;
+min-height:86px;
+}
+
+.label{
+font-size:12px;
+color:#c8b79d;
+text-transform:uppercase;
+letter-spacing:1px;
+}
+
+.value{
+margin-top:8px;
+font-size:30px;
+font-weight:700;
+color:#fff;
+line-height:1;
+}
+
+.wide{
+grid-column:span 2;
+}
+
+.tables{
+font-size:20px;
+line-height:1.25;
+}
+
+.status{
+padding:0 14px 14px;
+font-size:12px;
+color:#c8b79d;
+}
+
+.error{
+color:#ff9b9b;
+}
+
+@media (max-width: 720px){
+main{
+grid-template-columns:repeat(2,minmax(120px,1fr));
+}
+
+.wide{
+grid-column:span 2;
+}
+}
+
+</style>
+</head>
+
+<body>
+
+<header>
+<h1>THE HANGAR OPS</h1>
+<div id="updated">Loading...</div>
+</header>
+
+<main>
+<section class="metric">
+<div class="label">Active Carts</div>
+<div class="value" id="active_carts">0</div>
+</section>
+
+<section class="metric">
+<div class="label">Pending Bills</div>
+<div class="value" id="pending_bills">0</div>
+</section>
+
+<section class="metric">
+<div class="label">Pending L$</div>
+<div class="value" id="pending_linden">0</div>
+</section>
+
+<section class="metric">
+<div class="label">Kitchen L$</div>
+<div class="value" id="kitchen_linden">0</div>
+</section>
+
+<section class="metric">
+<div class="label">Open Tickets</div>
+<div class="value" id="open_tickets">0</div>
+</section>
+
+<section class="metric">
+<div class="label">Claimed</div>
+<div class="value" id="claimed_tickets">0</div>
+</section>
+
+<section class="metric">
+<div class="label">Completed Today</div>
+<div class="value" id="completed_today">0</div>
+</section>
+
+<section class="metric">
+<div class="label">Sales Today</div>
+<div class="value" id="sales_today">0</div>
+</section>
+
+<section class="metric wide">
+<div class="label">Paid Bills Today</div>
+<div class="value" id="paid_bills_today">0</div>
+</section>
+
+<section class="metric wide">
+<div class="label">Active Tables</div>
+<div class="value tables" id="active_tables">none</div>
+</section>
+</main>
+
+<div class="status" id="status">Live refresh every 5 seconds.</div>
+
+<script>
+
+function setText(id,value){
+    document
+        .getElementById(id)
+        .textContent =
+        value ?? "0";
+}
+
+async function load(){
+
+    const status =
+        document.getElementById("status");
+
+    try{
+
+        const response =
+            await fetch(
+                "/api/owner/operations" +
+                window.location.search,
+                {
+                    cache:"no-store"
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if(!data.ok){
+            throw new Error(
+                data.error ||
+                "Owner data unavailable"
+            );
+        }
+
+        setText("active_carts", data.active_carts);
+        setText("pending_bills", data.pending_bills);
+        setText("pending_linden", "L$" + data.pending_linden);
+        setText("kitchen_linden", "L$" + data.kitchen_linden);
+        setText("open_tickets", data.open_tickets);
+        setText("claimed_tickets", data.claimed_tickets);
+        setText("completed_today", data.completed_today);
+        setText("sales_today", "L$" + data.sales_today);
+        setText("paid_bills_today", data.paid_bills_today);
+        setText("active_tables", data.active_tables || "none");
+
+        document
+            .getElementById("updated")
+            .textContent =
+            data.updated_at_pacific || "Live";
+
+        status.className = "status";
+        status.textContent =
+            "Live refresh every 5 seconds.";
+
+    }
+    catch(error){
+
+        status.className =
+            "status error";
+
+        status.textContent =
+            "Owner dashboard could not load: " +
+            error.message;
+
+    }
+}
+
+load();
+
+setInterval(
+    load,
+    5000
+);
+
+</script>
+
+</body>
+</html>"""
+
+
+# ============================================================
 # ROUTES
 # ============================================================
 
@@ -2026,6 +2514,9 @@ ROUTES = {
 
     ("GET", "/api/kitchen/tickets"):
         api_tickets,
+
+    ("GET", "/api/owner/operations"):
+        api_owner_operations,
 
     ("POST", "/api/kitchen/claim"):
         api_claim,
@@ -2127,17 +2618,22 @@ class Handler(
         )
 
         # ----------------------------------------------------
-        # Kitchen page
+        # Web pages
         # ----------------------------------------------------
 
         if (
             method == "GET"
             and parsed.path
-            in ("/", "/kitchen")
+            in ("/", "/kitchen", "/owner")
         ):
 
+            html = kitchen_page()
+
+            if parsed.path == "/owner":
+                html = owner_page()
+
             self.send_html(
-                kitchen_page()
+                html
             )
 
             return

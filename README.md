@@ -20,6 +20,7 @@ https://hangar-kiosk-repo.onrender.com
 - Server Order HUD orders, using the same backend cart and bill flow.
 - Kitchen TV dashboard at `/kitchen`.
 - Second Life kitchen controller using compact JSON from `view=controller`.
+- Owner Operations HUD summary at `/api/owner/operations`.
 - Paid-only kitchen tickets. Orders are not shown to kitchen until payment clears.
 
 ## Render Settings
@@ -48,10 +49,21 @@ send custom HTTP headers because some SL environments reject `HTTP_CUSTOM_HEADER
 If `HANGAR_API_KEY` is set, POST routes expect an `X-Hangar-Key` header and the
 in-world objects will fail unless the auth approach is changed.
 
+Owner dashboard protection:
+
+```text
+HANGAR_OWNER_CODE=your-private-owner-code
+```
+
+If this is set, the owner dashboard data endpoint requires the same code. Use the
+dashboard URL `/owner?owner_code=your-private-owner-code` and put the same value
+in the Owner HUD script's `OWNER_CODE` variable.
+
 ## Pages
 
 - `GET /health` - service check.
 - `GET /kitchen` - kitchen TV dashboard for a browser/media screen.
+- `GET /owner` - owner operations dashboard for browser or HUD media prim.
 
 ## API Routes
 
@@ -62,6 +74,7 @@ in-world objects will fail unless the auth approach is changed.
 - `POST /pay/confirm`
 - `GET /api/kitchen/tickets?page=1&limit=6`
 - `GET /api/kitchen/tickets?page=1&limit=6&view=controller`
+- `GET /api/owner/operations`
 - `POST /api/kitchen/claim`
 - `POST /api/kitchen/complete`
 - `POST /api/kitchen/clear-completed`
@@ -74,6 +87,7 @@ Use the Render versions of the scripts:
 - `outputs/sl_tap_to_pay_render.lsl`
 - `outputs/sl_kitchen_controller_render_fixed.lsl`
 - `outputs/sl_server_order_hud_render.lsl`
+- `outputs/sl_owner_operations_hud_render.lsl`
 
 All four scripts must point at the same Render backend URL.
 
@@ -154,6 +168,15 @@ The backend currently keeps every item at L$1 for testing.
 - The HUD resolves that name to an avatar key with `llRequestUserKey`.
 - The server must set the correct table ID before placing the bill.
 - The customer still pays through the table Tap-to-Pay object.
+
+## Owner HUD Notes
+
+- The Owner Operations HUD uses `/api/owner/operations`.
+- It is read-only and shows active carts, pending bills, kitchen counts,
+  completed orders today, sales today, and active tables.
+- The web dashboard is available at `/owner` and refreshes every 5 seconds.
+- If `HANGAR_OWNER_CODE` is set on Render, set the same value in the HUD script's
+  `OWNER_CODE` variable, or open `/owner?owner_code=YOUR_CODE`.
 
 ## Updating Prices
 
