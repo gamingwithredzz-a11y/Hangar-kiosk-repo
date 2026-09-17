@@ -35,34 +35,34 @@ PACIFIC = ZoneInfo("America/Los_Angeles")
 # ============================================================
 
 MENU = [
-    ("wings_magnum_jerk", "12 Piece Wings - Magnum Jerk", 1),
-    ("wings_hot_honey", "12 Piece Wings - Hot Honey", 1),
-    ("wings_buffalo", "12 Piece Wings - Buffalo", 1),
+    ("wings_magnum_jerk", "12 Piece Wings - Magnum Jerk", 900),
+    ("wings_hot_honey", "12 Piece Wings - Hot Honey", 900),
+    ("wings_buffalo", "12 Piece Wings - Buffalo", 900),
 
-    ("beef_tacos", "Beef Taco Platter", 1),
-    ("chicken_tacos", "Chicken Taco Platter", 1),
-    ("oxtail_tacos", "Oxtail Taco Platter", 1),
-    ("breakfast_tacos", "Breakfast Taco Platter", 1),
+    ("beef_tacos", "Beef Taco Platter", 650),
+    ("chicken_tacos", "Chicken Taco Platter", 750),
+    ("oxtail_tacos", "Oxtail Taco Platter", 950),
+    ("breakfast_tacos", "Breakfast Taco Platter", 700),
 
-    ("water", "Water", 1),
-    ("peach_tea", "Peach Tea", 1),
-    ("lemonade", "Lemonade", 1),
+    ("water", "Water", 200),
+    ("peach_tea", "Peach Tea", 200),
+    ("lemonade", "Lemonade", 200),
 
-    ("abg_strawberry_hennessy", "ABG-Strawberry Hennessy-Tray", 1),
-    ("abg_pink_jalapeno_kiss", "ABG-Pink Jalapeno Kiss [RLV]-Tray", 1),
-    ("abg_pineapple_margarita", "ABG-Pineapple Margarita Tray", 1),
-    ("abg_pineapple_martini", "ABG-Pineapple-Martini Tray", 1),
-    ("abg_strawberry_margarita", "ABG-Strawberry Margarita Tray", 1),
-    ("abg_strawberry_martini", "ABG-StrawBerry-Martini Tray", 1),
+    ("abg_strawberry_hennessy", "ABG-Strawberry Hennessy-Tray", 1000),
+    ("abg_pink_jalapeno_kiss", "ABG-Pink Jalapeno Kiss [RLV]-Tray", 1000),
+    ("abg_pineapple_margarita", "ABG-Pineapple Margarita Tray", 1000),
+    ("abg_pineapple_martini", "ABG-Pineapple-Martini Tray", 1000),
+    ("abg_strawberry_margarita", "ABG-Strawberry Margarita Tray", 1000),
+    ("abg_strawberry_martini", "ABG-StrawBerry-Martini Tray", 1000),
 
-    ("hookah_mint", "Hookah Session - Mint", 1),
-    ("hookah_blueberry", "Hookah Session - Blueberry", 1),
-    ("hookah_watermelon", "Hookah Session - Watermelon", 1),
-    ("hookah_peach", "Hookah Session - Peach", 1),
-    ("hookah_grape", "Hookah Session - Grape", 1),
-    ("hookah_double_apple", "Hookah Session - Double Apple", 1),
-    ("hookah_strawberry", "Hookah Session - Strawberry", 1),
-    ("hookah_mango", "Hookah Session - Mango", 1),
+    ("hookah_mint", "Hookah Session - Mint", 600),
+    ("hookah_blueberry", "Hookah Session - Blueberry", 600),
+    ("hookah_watermelon", "Hookah Session - Watermelon", 600),
+    ("hookah_peach", "Hookah Session - Peach", 600),
+    ("hookah_grape", "Hookah Session - Grape", 600),
+    ("hookah_double_apple", "Hookah Session - Double Apple", 600),
+    ("hookah_strawberry", "Hookah Session - Strawberry", 600),
+    ("hookah_mango", "Hookah Session - Mango", 600),
 ]
 
 

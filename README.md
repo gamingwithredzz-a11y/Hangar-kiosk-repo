@@ -98,7 +98,7 @@ All four scripts must point at the same Render backend URL.
 
 ## Current Menu
 
-The backend currently keeps every item at L$1 for testing.
+The backend currently uses live customer prices.
 
 ### Wings
 
