@@ -44,12 +44,6 @@ MENU = [
     ("oxtail_tacos", "Oxtail Taco Platter", 1),
     ("breakfast_tacos", "Breakfast Taco Platter", 1),
 
-    ("jerk_pepper_shrimp", "Jerk Pepper Shrimp Tray", 1),
-    ("jerk_salmon_fillets", "Jerk Salmon Fillets Tray", 1),
-    ("jerk_ribs", "Jerk Ribs Tray", 1),
-    ("jerk_leg_thigh", "Jerk Leg and Thigh Tray", 1),
-    ("jerk_wings", "Jerk Wings Tray", 1),
-
     ("water", "Water", 1),
     ("peach_tea", "Peach Tea", 1),
     ("lemonade", "Lemonade", 1),
@@ -1622,6 +1616,116 @@ def api_inventory_status(
     )
 
 
+def delete_cart_data(
+    conn,
+    cart_ids
+):
+
+    if not cart_ids:
+        return
+
+    placeholders = ",".join(
+        "?"
+        for _cart_id in cart_ids
+    )
+
+    conn.execute(
+        f"""
+        DELETE FROM cart_items
+        WHERE cart_id IN ({placeholders})
+        """,
+        cart_ids
+    )
+
+    conn.execute(
+        f"""
+        DELETE FROM carts
+        WHERE id IN ({placeholders})
+        """,
+        cart_ids
+    )
+
+
+def api_owner_clear_active_tables(
+    query,
+    _body
+):
+
+    if not check_owner_access(query):
+        return err(
+            "missing or invalid owner code",
+            401
+        )
+
+    with db() as conn:
+
+        cart_ids = [
+            row["id"]
+            for row in conn.execute(
+                """
+                SELECT id
+                FROM carts
+                WHERE status = 'cart'
+                """
+            )
+        ]
+
+        pending_bill_rows = rows_to_dicts(
+            conn.execute(
+                """
+                SELECT id, cart_id
+                FROM bills
+                WHERE status = 'pending_payment'
+                """
+            )
+        )
+
+        for row in pending_bill_rows:
+
+            if row["cart_id"] not in cart_ids:
+                cart_ids.append(
+                    row["cart_id"]
+                )
+
+        active_cart_count = scalar(
+            conn,
+            """
+            SELECT COUNT(*)
+            FROM carts
+            WHERE status = 'cart'
+            """
+        )
+
+        pending_bill_count = len(
+            pending_bill_rows
+        )
+
+        conn.execute(
+            """
+            DELETE FROM bills
+            WHERE status = 'pending_payment'
+            """
+        )
+
+        delete_cart_data(
+            conn,
+            cart_ids
+        )
+
+    return ok(
+        {
+            "cleared_carts":
+                active_cart_count,
+
+            "cleared_pending_bills":
+                pending_bill_count,
+
+            "kitchen_orders_preserved":
+                True,
+        }
+    )
+
+
 # ============================================================
 # KITCHEN TICKETS
 # ============================================================
@@ -2538,6 +2642,22 @@ font-size:12px;
 color:#c8b79d;
 }
 
+.actions{
+padding:0 14px 14px;
+display:flex;
+gap:8px;
+}
+
+button{
+background:#f0b45f;
+border:0;
+border-radius:6px;
+color:#111;
+font-weight:700;
+padding:9px 12px;
+cursor:pointer;
+}
+
 .error{
 color:#ff9b9b;
 }
@@ -2624,6 +2744,10 @@ grid-column:span 2;
 </section>
 </main>
 
+<div class="actions">
+<button id="clear_active">Clear Active Tables</button>
+</div>
+
 <div class="status" id="status">Live refresh every 5 seconds.</div>
 
 <script>
@@ -2703,6 +2827,70 @@ setInterval(
     5000
 );
 
+document
+    .getElementById("clear_active")
+    .addEventListener(
+        "click",
+        async () => {
+
+            if(!confirm(
+                "Clear unpaid carts and pending bills? Paid kitchen orders will stay."
+            )){
+                return;
+            }
+
+            const status =
+                document.getElementById("status");
+
+            try{
+
+                const response =
+                    await fetch(
+                        "/api/owner/clear-active-tables" +
+                        window.location.search,
+                        {
+                            method:"POST",
+                            headers:{
+                                "Content-Type":"application/json"
+                            },
+                            body:"{}"
+                        }
+                    );
+
+                const data =
+                    await response.json();
+
+                if(!data.ok){
+                    throw new Error(
+                        data.error ||
+                        "Clear failed"
+                    );
+                }
+
+                status.className = "status";
+                status.textContent =
+                    "Cleared "
+                    + data.cleared_carts
+                    + " carts and "
+                    + data.cleared_pending_bills
+                    + " pending bills.";
+
+                load();
+
+            }
+            catch(error){
+
+                status.className =
+                    "status error";
+
+                status.textContent =
+                    "Could not clear active tables: "
+                    + error.message;
+
+            }
+        }
+    );
+
 </script>
 
 </body>
@@ -2735,6 +2923,9 @@ ROUTES = {
 
     ("GET", "/api/owner/operations"):
         api_owner_operations,
+
+    ("POST", "/api/owner/clear-active-tables"):
+        api_owner_clear_active_tables,
 
     ("POST", "/api/inventory/snapshot"):
         api_inventory_snapshot,

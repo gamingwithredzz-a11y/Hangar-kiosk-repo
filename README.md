@@ -76,6 +76,7 @@ in the Owner HUD script's `OWNER_CODE` variable.
 - `GET /api/kitchen/tickets?page=1&limit=6`
 - `GET /api/kitchen/tickets?page=1&limit=6&view=controller`
 - `GET /api/owner/operations`
+- `POST /api/owner/clear-active-tables`
 - `POST /api/inventory/snapshot`
 - `GET /api/inventory/status`
 - `POST /api/kitchen/claim`
@@ -112,14 +113,6 @@ The backend currently keeps every item at L$1 for testing.
 - Oxtail Taco Platter
 - Breakfast Taco Platter
 
-### Jerk Trays
-
-- Jerk Pepper Shrimp Tray
-- Jerk Salmon Fillets Tray
-- Jerk Ribs Tray
-- Jerk Leg and Thigh Tray
-- Jerk Wings Tray
-
 ### Regular Drinks
 
 - Water
@@ -145,6 +138,10 @@ The backend currently keeps every item at L$1 for testing.
 - Hookah Session - Double Apple
 - Hookah Session - Strawberry
 - Hookah Session - Mango
+
+### Temporarily Unavailable For Opening
+
+- Jerk trays
 
 ## Kitchen Controller Notes
 
@@ -180,6 +177,8 @@ The backend currently keeps every item at L$1 for testing.
   completed orders today, sales today, and active tables.
 - The web dashboard is available at `/owner` and refreshes every 5 seconds.
 - It also shows kitchen dispenser inventory total and low-stock items.
+- The owner dashboard and HUD can clear unpaid active carts and pending bills.
+  Paid kitchen orders are preserved.
 - If `HANGAR_OWNER_CODE` is set on Render, set the same value in the HUD script's
   `OWNER_CODE` variable, or open `/owner?owner_code=YOUR_CODE`.
 
