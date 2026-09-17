@@ -205,6 +205,16 @@ def init_db():
                 completed_at INTEGER,
                 created_at INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS inventory_items (
+                item_id TEXT PRIMARY KEY,
+                label TEXT NOT NULL,
+                category TEXT NOT NULL,
+                count INTEGER NOT NULL,
+                source_id TEXT,
+                source_name TEXT,
+                updated_at INTEGER NOT NULL
+            );
             """
         )
 
@@ -1242,7 +1252,7 @@ def api_owner_operations(
 ):
 
     if not check_owner_access(query):
-        return fail(
+        return err(
             "missing or invalid owner code",
             401
         )
@@ -1372,6 +1382,35 @@ def api_owner_operations(
             )
         ]
 
+        inventory_rows = rows_to_dicts(
+            conn.execute(
+                """
+                SELECT
+                    item_id,
+                    label,
+                    category,
+                    count,
+                    source_name,
+                    updated_at
+                FROM inventory_items
+                ORDER BY category, label
+                """
+            )
+        )
+
+        inventory_total = sum(
+            row["count"]
+            for row in inventory_rows
+        )
+
+        low_inventory = [
+            row["label"]
+            + ": "
+            + str(row["count"])
+            for row in inventory_rows
+            if row["count"] <= 2
+        ]
+
     return ok(
         {
             "updated_at_pacific":
@@ -1412,6 +1451,173 @@ def api_owner_operations(
                 )
                 if active_tables
                 else "none",
+
+            "inventory_total":
+                inventory_total,
+
+            "inventory_low":
+                ", ".join(
+                    low_inventory[:8]
+                )
+                if low_inventory
+                else "none",
+
+            "inventory_items":
+                inventory_rows,
+        }
+    )
+
+
+# ============================================================
+# INVENTORY
+# ============================================================
+
+def api_inventory_snapshot(
+    _query,
+    body
+):
+
+    source_id = body.get(
+        "source_id",
+        ""
+    )
+
+    source_name = body.get(
+        "source_name",
+        ""
+    )
+
+    items = body.get(
+        "items",
+        []
+    )
+
+    if not isinstance(items, list):
+        return err(
+            "items must be a list"
+        )
+
+    updated_at = now()
+
+    with db() as conn:
+
+        for item in items:
+
+            item_id = item.get(
+                "item_id",
+                ""
+            )
+
+            label = item.get(
+                "label",
+                item_id
+            )
+
+            category = item.get(
+                "category",
+                "inventory"
+            )
+
+            count = int(
+                item.get(
+                    "count",
+                    0
+                )
+                or 0
+            )
+
+            if not item_id:
+                continue
+
+            conn.execute(
+                """
+                INSERT INTO inventory_items
+                (
+                    item_id,
+                    label,
+                    category,
+                    count,
+                    source_id,
+                    source_name,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+
+                ON CONFLICT(item_id)
+                DO UPDATE SET
+                    label = excluded.label,
+                    category = excluded.category,
+                    count = excluded.count,
+                    source_id = excluded.source_id,
+                    source_name = excluded.source_name,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    item_id,
+                    label,
+                    category,
+                    count,
+                    source_id,
+                    source_name,
+                    updated_at
+                )
+            )
+
+    return ok(
+        {
+            "updated_at":
+                updated_at,
+
+            "updated_at_pacific":
+                pacific_time(
+                    updated_at
+                ),
+
+            "items_received":
+                len(items),
+        }
+    )
+
+
+def api_inventory_status(
+    query,
+    _body
+):
+
+    if not check_owner_access(query):
+        return err(
+            "missing or invalid owner code",
+            401
+        )
+
+    with db() as conn:
+
+        items = rows_to_dicts(
+            conn.execute(
+                """
+                SELECT
+                    item_id,
+                    label,
+                    category,
+                    count,
+                    source_name,
+                    updated_at
+                FROM inventory_items
+                ORDER BY category, label
+                """
+            )
+        )
+
+    return ok(
+        {
+            "items":
+                items,
+
+            "total":
+                sum(
+                    item["count"]
+                    for item in items
+                ),
         }
     )
 
@@ -2406,6 +2612,16 @@ grid-column:span 2;
 <div class="label">Active Tables</div>
 <div class="value tables" id="active_tables">none</div>
 </section>
+
+<section class="metric">
+<div class="label">Inventory Total</div>
+<div class="value" id="inventory_total">0</div>
+</section>
+
+<section class="metric wide">
+<div class="label">Low Inventory</div>
+<div class="value tables" id="inventory_low">none</div>
+</section>
 </main>
 
 <div class="status" id="status">Live refresh every 5 seconds.</div>
@@ -2455,6 +2671,8 @@ async function load(){
         setText("sales_today", "L$" + data.sales_today);
         setText("paid_bills_today", data.paid_bills_today);
         setText("active_tables", data.active_tables || "none");
+        setText("inventory_total", data.inventory_total);
+        setText("inventory_low", data.inventory_low || "none");
 
         document
             .getElementById("updated")
@@ -2517,6 +2735,12 @@ ROUTES = {
 
     ("GET", "/api/owner/operations"):
         api_owner_operations,
+
+    ("POST", "/api/inventory/snapshot"):
+        api_inventory_snapshot,
+
+    ("GET", "/api/inventory/status"):
+        api_inventory_status,
 
     ("POST", "/api/kitchen/claim"):
         api_claim,

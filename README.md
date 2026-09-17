@@ -21,6 +21,7 @@ https://hangar-kiosk-repo.onrender.com
 - Kitchen TV dashboard at `/kitchen`.
 - Second Life kitchen controller using compact JSON from `view=controller`.
 - Owner Operations HUD summary at `/api/owner/operations`.
+- Kitchen dispenser live inventory through `/api/inventory/snapshot`.
 - Paid-only kitchen tickets. Orders are not shown to kitchen until payment clears.
 
 ## Render Settings
@@ -75,6 +76,8 @@ in the Owner HUD script's `OWNER_CODE` variable.
 - `GET /api/kitchen/tickets?page=1&limit=6`
 - `GET /api/kitchen/tickets?page=1&limit=6&view=controller`
 - `GET /api/owner/operations`
+- `POST /api/inventory/snapshot`
+- `GET /api/inventory/status`
 - `POST /api/kitchen/claim`
 - `POST /api/kitchen/complete`
 - `POST /api/kitchen/clear-completed`
@@ -88,6 +91,7 @@ Use the Render versions of the scripts:
 - `outputs/sl_kitchen_controller_render_fixed.lsl`
 - `outputs/sl_server_order_hud_render.lsl`
 - `outputs/sl_owner_operations_hud_render.lsl`
+- `outputs/sl_kitchen_dispenser_inventory_render.lsl`
 
 All four scripts must point at the same Render backend URL.
 
@@ -175,8 +179,18 @@ The backend currently keeps every item at L$1 for testing.
 - It is read-only and shows active carts, pending bills, kitchen counts,
   completed orders today, sales today, and active tables.
 - The web dashboard is available at `/owner` and refreshes every 5 seconds.
+- It also shows kitchen dispenser inventory total and low-stock items.
 - If `HANGAR_OWNER_CODE` is set on Render, set the same value in the HUD script's
   `OWNER_CODE` variable, or open `/owner?owner_code=YOUR_CODE`.
+
+## Kitchen Dispenser Inventory Notes
+
+- The kitchen dispenser posts exact inventory snapshots to
+  `/api/inventory/snapshot`.
+- Inventory is not deducted when orders are paid.
+- Inventory is deducted only when the item is actually removed from the dispenser
+  inventory, such as when the dispenser gives the item to staff.
+- The backend stores the latest count for each tracked dispenser item.
 
 ## Updating Prices
 
