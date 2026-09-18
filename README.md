@@ -108,10 +108,9 @@ The backend currently uses live customer prices.
 
 ### Tacos
 
-- Beef Taco Platter
+- Shrimp Taco Platter
 - Chicken Taco Platter
-- Oxtail Taco Platter
-- Breakfast Taco Platter
+- Beef Taco Platter
 
 ### Regular Drinks
 
@@ -123,10 +122,7 @@ The backend currently uses live customer prices.
 
 - ABG-Strawberry Hennessy-Tray
 - ABG-Pink Jalapeno Kiss [RLV]-Tray
-- ABG-Pineapple Margarita Tray
-- ABG-Pineapple-Martini Tray
 - ABG-Strawberry Margarita Tray
-- ABG-StrawBerry-Martini Tray
 
 ### Hookah
 

@@ -39,10 +39,9 @@ MENU = [
     ("wings_hot_honey", "12 Piece Wings - Hot Honey", 900),
     ("wings_buffalo", "12 Piece Wings - Buffalo", 900),
 
-    ("beef_tacos", "Beef Taco Platter", 650),
+    ("shrimp_tacos", "Shrimp Taco Platter", 950),
     ("chicken_tacos", "Chicken Taco Platter", 750),
-    ("oxtail_tacos", "Oxtail Taco Platter", 950),
-    ("breakfast_tacos", "Breakfast Taco Platter", 700),
+    ("beef_tacos", "Beef Taco Platter", 650),
 
     ("water", "Water", 200),
     ("peach_tea", "Peach Tea", 200),
