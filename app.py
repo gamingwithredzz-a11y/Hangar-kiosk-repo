@@ -50,10 +50,7 @@ MENU = [
 
     ("abg_strawberry_hennessy", "ABG-Strawberry Hennessy-Tray", 1000),
     ("abg_pink_jalapeno_kiss", "ABG-Pink Jalapeno Kiss [RLV]-Tray", 1000),
-    ("abg_pineapple_margarita", "ABG-Pineapple Margarita Tray", 1000),
-    ("abg_pineapple_martini", "ABG-Pineapple-Martini Tray", 1000),
     ("abg_strawberry_margarita", "ABG-Strawberry Margarita Tray", 1000),
-    ("abg_strawberry_martini", "ABG-StrawBerry-Martini Tray", 1000),
 
     ("hookah_mint", "Hookah Session - Mint", 600),
     ("hookah_blueberry", "Hookah Session - Blueberry", 600),
