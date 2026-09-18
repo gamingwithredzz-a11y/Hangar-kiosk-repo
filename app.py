@@ -1236,6 +1236,45 @@ def scalar(
     return value
 
 
+def owner_customer_name(row):
+
+    return (
+        row["avatar_name"]
+        or row["avatar_id"]
+        or "unknown"
+    )
+
+
+def owner_detail_lines(
+    rows,
+    formatter,
+    empty="none",
+    max_lines=8
+):
+
+    lines = [
+        formatter(row)
+        for row in rows[:max_lines]
+    ]
+
+    extra = (
+        len(rows)
+        - max_lines
+    )
+
+    if extra > 0:
+        lines.append(
+            "+ "
+            + str(extra)
+            + " more"
+        )
+
+    if not lines:
+        return empty
+
+    return "\n".join(lines)
+
+
 def api_owner_operations(
     query,
     _body
@@ -1372,6 +1411,42 @@ def api_owner_operations(
             )
         ]
 
+        pending_bill_rows = rows_to_dicts(
+            conn.execute(
+                """
+                SELECT
+                    table_id,
+                    avatar_id,
+                    avatar_name,
+                    amount_linden,
+                    created_at
+                FROM bills
+                WHERE status = 'pending_payment'
+                ORDER BY created_at ASC
+                LIMIT 20
+                """
+            )
+        )
+
+        kitchen_ticket_rows = rows_to_dicts(
+            conn.execute(
+                """
+                SELECT
+                    table_id,
+                    avatar_id,
+                    avatar_name,
+                    amount_linden,
+                    status,
+                    claimed_by_name,
+                    created_at
+                FROM kitchen_tickets
+                WHERE status != 'complete'
+                ORDER BY created_at ASC
+                LIMIT 20
+                """
+            )
+        )
+
         inventory_rows = rows_to_dicts(
             conn.execute(
                 """
@@ -1400,6 +1475,34 @@ def api_owner_operations(
             for row in inventory_rows
             if row["count"] <= 2
         ]
+
+    pending_bill_details = owner_detail_lines(
+        pending_bill_rows,
+        lambda row:
+            row["table_id"]
+            + " - "
+            + owner_customer_name(row)
+            + " - L$"
+            + str(row["amount_linden"]),
+    )
+
+    kitchen_ticket_details = owner_detail_lines(
+        kitchen_ticket_rows,
+        lambda row:
+            row["status"].upper()
+            + " "
+            + row["table_id"]
+            + " - "
+            + owner_customer_name(row)
+            + " - L$"
+            + str(row["amount_linden"])
+            + (
+                " - "
+                + row["claimed_by_name"]
+                if row["claimed_by_name"]
+                else ""
+            ),
+    )
 
     return ok(
         {
@@ -1441,6 +1544,12 @@ def api_owner_operations(
                 )
                 if active_tables
                 else "none",
+
+            "pending_bill_details":
+                pending_bill_details,
+
+            "kitchen_ticket_details":
+                kitchen_ticket_details,
 
             "inventory_total":
                 inventory_total,
@@ -2632,6 +2741,12 @@ font-size:20px;
 line-height:1.25;
 }
 
+.details{
+font-size:16px;
+line-height:1.35;
+white-space:pre-line;
+}
+
 .status{
 padding:0 14px 14px;
 font-size:12px;
@@ -2729,6 +2844,16 @@ grid-column:span 2;
 <div class="value tables" id="active_tables">none</div>
 </section>
 
+<section class="metric wide">
+<div class="label">Pending Bill Names</div>
+<div class="value details" id="pending_bill_details">none</div>
+</section>
+
+<section class="metric wide">
+<div class="label">Kitchen Orders</div>
+<div class="value details" id="kitchen_ticket_details">none</div>
+</section>
+
 <section class="metric">
 <div class="label">Inventory Total</div>
 <div class="value" id="inventory_total">0</div>
@@ -2791,6 +2916,8 @@ async function load(){
         setText("sales_today", "L$" + data.sales_today);
         setText("paid_bills_today", data.paid_bills_today);
         setText("active_tables", data.active_tables || "none");
+        setText("pending_bill_details", data.pending_bill_details || "none");
+        setText("kitchen_ticket_details", data.kitchen_ticket_details || "none");
         setText("inventory_total", data.inventory_total);
         setText("inventory_low", data.inventory_low || "none");
 
