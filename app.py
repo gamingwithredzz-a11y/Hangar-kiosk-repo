@@ -1275,6 +1275,77 @@ def owner_detail_lines(
     return "\n".join(lines)
 
 
+def owner_item_summary(
+    items,
+    max_items=3,
+    max_chars=90
+):
+
+    names = [
+        item.get(
+            "name",
+            item.get(
+                "item_id",
+                "item"
+            )
+        )
+        for item in items
+    ]
+
+    summary = ", ".join(
+        names[:max_items]
+    )
+
+    extra = (
+        len(names)
+        - max_items
+    )
+
+    if extra > 0:
+        summary += (
+            ", +"
+            + str(extra)
+            + " more"
+        )
+
+    if not summary:
+        summary = "no items"
+
+    if len(summary) > max_chars:
+        summary = (
+            summary[:max_chars - 3]
+            + "..."
+        )
+
+    return summary
+
+
+def owner_cart_item_summary(
+    conn,
+    cart_id
+):
+
+    return owner_item_summary(
+        cart_items(
+            conn,
+            cart_id
+        )
+    )
+
+
+def owner_ticket_item_summary(row):
+
+    try:
+        items = json.loads(
+            row["items"]
+            or "[]"
+        )
+    except json.JSONDecodeError:
+        items = []
+
+    return owner_item_summary(items)
+
+
 def api_owner_operations(
     query,
     _body
@@ -1415,6 +1486,8 @@ def api_owner_operations(
             conn.execute(
                 """
                 SELECT
+                    id,
+                    cart_id,
                     table_id,
                     avatar_id,
                     avatar_name,
@@ -1435,6 +1508,7 @@ def api_owner_operations(
                     table_id,
                     avatar_id,
                     avatar_name,
+                    items,
                     amount_linden,
                     status,
                     claimed_by_name,
@@ -1446,6 +1520,15 @@ def api_owner_operations(
                 """
             )
         )
+
+        for row in pending_bill_rows:
+            row["item_summary"] = owner_cart_item_summary(
+                conn,
+                row["cart_id"]
+            )
+
+        for row in kitchen_ticket_rows:
+            row["item_summary"] = owner_ticket_item_summary(row)
 
         inventory_rows = rows_to_dicts(
             conn.execute(
@@ -1483,7 +1566,9 @@ def api_owner_operations(
             + " - "
             + owner_customer_name(row)
             + " - L$"
-            + str(row["amount_linden"]),
+            + str(row["amount_linden"])
+            + " - "
+            + row["item_summary"],
     )
 
     kitchen_ticket_details = owner_detail_lines(
@@ -1496,6 +1581,8 @@ def api_owner_operations(
             + owner_customer_name(row)
             + " - L$"
             + str(row["amount_linden"])
+            + " - "
+            + row["item_summary"]
             + (
                 " - "
                 + row["claimed_by_name"]
@@ -2845,7 +2932,7 @@ grid-column:span 2;
 </section>
 
 <section class="metric wide">
-<div class="label">Pending Bill Names</div>
+<div class="label">Pending Bill Orders</div>
 <div class="value details" id="pending_bill_details">none</div>
 </section>
 
