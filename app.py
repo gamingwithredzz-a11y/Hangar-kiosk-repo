@@ -44,6 +44,9 @@ MENU = [
     ("beef_tacos", "Beef Taco Platter", 650),
     ("oxtail_tacos", "Oxtail Taco Platter", 950),
 
+    ("shot_grey_goose", "Grey Goose Shot", 300),
+    ("shot_don_julio", "Don Julio Shot", 300),
+    ("shot_strawberry_henny", "Strawberry Henny Shot", 300),
     ("water", "Water", 200),
     ("peach_tea", "Peach Tea", 200),
     ("lemonade", "Lemonade", 200),
@@ -551,8 +554,21 @@ def create_ticket(
 # MENU API
 # ============================================================
 
+def is_taco_tuesday():
+    return datetime.now(PACIFIC).weekday() == 1
+
+
+def effective_menu_item(item, taco_tuesday):
+    item = dict(item)
+    if taco_tuesday:
+        if item["id"].startswith("wings_") or item["id"].startswith("jerk_"):
+            return None
+        if item["id"].endswith("_tacos"):
+            item["price_linden"] = 750
+    return item
+
 def api_menu(
-    _query,
+    query,
     _body
 ):
 
@@ -569,12 +585,17 @@ def api_menu(
             )
         )
 
-    return ok(
-        {
-            "menu_version": 1,
-            "items": items
-        }
-    )
+    taco_tuesday = is_taco_tuesday()
+    items = [effective_menu_item(item, taco_tuesday) for item in items]
+    items = [item for item in items if item is not None]
+
+    if query.get("view", [""])[0] == "prices":
+        return ok({"taco_tuesday": taco_tuesday, "prices": [
+            value for item in items
+            for value in (item["id"], item["price_linden"])
+        ]})
+
+    return ok({"menu_version": 1, "taco_tuesday": taco_tuesday, "items": items})
 
 
 # ============================================================
@@ -630,6 +651,9 @@ def api_cart_add(
             (item_id,)
         ).fetchone()
 
+        if item:
+            item = effective_menu_item(item, is_taco_tuesday())
+
         if not item:
             return err(
                 "menu item is unavailable",
@@ -676,8 +700,10 @@ def api_cart_add(
                 "table_id": table_id,
                 "avatar_id": avatar_id,
                 "avatar_name": avatar_name,
-                "items": items
-            }
+                "items": items,
+                "total_linden": sum(row["price_linden"] for row in items)
+            },
+            "added_item": {"name": item["name"], "price_linden": item["price_linden"]}
         }
     )
 

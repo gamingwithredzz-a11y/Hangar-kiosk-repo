@@ -69,6 +69,7 @@ in the Owner HUD script's `OWNER_CODE` variable.
 ## API Routes
 
 - `GET /menu`
+- `GET /menu?view=prices` - compact item IDs and live prices for tablets.
 - `POST /cart/add`
 - `POST /order/place`
 - `GET /pay/pending?avatar_id=...&table_id=...`
@@ -126,6 +127,17 @@ The backend currently uses live customer prices.
 - ABG-Pink Jalapeno Kiss [RLV]-Tray
 - ABG-Pineapple Margarita Tray
 
+### Shots
+
+Under Drinks > Shots on tablets and the server HUD:
+
+- Grey Goose Shot - L$300
+- Don Julio Shot - L$300
+- Strawberry Henny Shot - L$300
+
+Shots remain available on Taco Tuesdays at L$300 each. Shot orders use the normal
+private cart, payment, and kitchen flow. Dispenser inventory mappings for shots
+have not been configured.
 ### Hookah
 
 - Hookah Session - Mint
@@ -230,3 +242,27 @@ Touch the updater, choose `Scan Tablets`, verify the expected table IDs, then
 `Push Update`. Close old dialogs and touch the tablets again to verify the menu.
 Test one tablet first when changing behavior. This updater sends only the tablet
 ordering script; it does not update Tap-to-Pay units or other objects automatically.
+
+### Tablet Price Display
+
+The updated tablet loads current prices from `/menu?view=prices` when touched.
+Category dialogs list each item price before the customer selects it. After an
+item is added, the private confirmation shows that item's charged price and the
+running cart total returned by `/cart/add`. Existing cart items retain their
+original prices if menu prices change while the customer is ordering.
+
+Deploy `app.py` first, then push the updated `Hangar Table Tablet` script using
+the updater box. Prices need only a backend update afterward; changes to menu
+buttons or item IDs still require a tablet script push.
+
+### Automatic Taco Tuesday
+
+Tuesday is measured in Second Life/Pacific time (America/Los_Angeles).
+On Tuesdays all available taco platters cost L$750 when added to a cart.
+New wing/jerk additions are unavailable through both tablet and server HUD APIs.
+The updated tablet reads the backend's `taco_tuesday` flag when touched and shows
+only Tacos, Drinks, and Hookah. Regular drinks, drink trays, and hookah retain
+normal prices. On Wednesday, normal tablet categories and taco prices return.
+Existing cart items and already-issued bills retain their saved prices.
+The server HUD's static category buttons do not change automatically, but the
+backend still enforces Tuesday prices and rejects new wing additions.
