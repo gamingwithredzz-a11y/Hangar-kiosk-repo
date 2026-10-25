@@ -72,6 +72,7 @@ in the Owner HUD script's `OWNER_CODE` variable.
 - `POST /cart/add`
 - `POST /order/place`
 - `GET /pay/pending?avatar_id=...&table_id=...`
+- `GET /pay/table-status?table_id=...` - unpaid count only; no customer details.
 - `POST /pay/confirm`
 - `GET /api/kitchen/tickets?page=1&limit=6`
 - `GET /api/kitchen/tickets?page=1&limit=6&view=controller`
@@ -94,7 +95,7 @@ Use the Render versions of the scripts:
 - `outputs/sl_owner_operations_hud_render.lsl`
 - `outputs/sl_kitchen_dispenser_inventory_render.lsl`
 
-All four scripts must point at the same Render backend URL.
+All connected scripts must point at the same Render backend URL.
 
 ## Current Menu
 
@@ -111,6 +112,7 @@ The backend currently uses live customer prices.
 - Shrimp Taco Platter
 - Chicken Taco Platter
 - Beef Taco Platter
+- Oxtail Taco Platter
 
 ### Regular Drinks
 
@@ -122,7 +124,7 @@ The backend currently uses live customer prices.
 
 - ABG-Strawberry Hennessy-Tray
 - ABG-Pink Jalapeno Kiss [RLV]-Tray
-- ABG-Strawberry Margarita Tray
+- ABG-Pineapple Margarita Tray
 
 ### Hookah
 
@@ -169,7 +171,7 @@ The backend currently uses live customer prices.
 ## Owner HUD Notes
 
 - The Owner Operations HUD uses `/api/owner/operations`.
-- It is read-only and shows active carts, pending bills, kitchen counts,
+- It shows active carts, pending bills, kitchen counts,
   completed orders today, sales today, and active tables.
 - The web dashboard is available at `/owner` and refreshes every 5 seconds.
 - It also shows kitchen dispenser inventory total and low-stock items.
@@ -199,3 +201,32 @@ After editing prices or menu items:
 
 The Second Life scripts use static item IDs, so if a menu item ID changes in
 `app.py`, update the matching ID in both the table tablet and server HUD scripts.
+
+### Red Payment Reminder And Text Placement
+
+- The updated Tap-to-Pay script checks `/pay/table-status` every 15 seconds.
+- Unpaid bills at that table make the reminder text pulse red. Bills from the
+  tablet and server HUD both count. Public reminder text shows no customer names.
+- Payment confirmation remains visible for 10 seconds. Then green idle text
+  returns, or red flashing resumes if another unpaid bill remains.
+- Link a small marker named exactly `Hangar Pay Text` to offset the floating text.
+  Keep the payment unit as root and keep the payment script in that unit.
+- Position the marker, then set only its transparency to 100%.
+- Keep the payment unit description matched to the tablet table ID.
+- Deploy the updated backend before testing the reminder script in-world.
+
+### Owner Order Details
+
+Owner operations now includes customer/table/amount and shortened item summaries
+for pending bills and active kitchen tickets. Long orders and lists are abbreviated.
+
+### Mass Updating The 22 Tablets
+
+Install `sl_tablet_update_receiver.lsl` once in each tablet, alongside the ordering
+script named exactly `Hangar Table Tablet`. In the updater box, keep the mass
+updater script running and the stored `Hangar Table Tablet` ordering script stopped.
+
+Touch the updater, choose `Scan Tablets`, verify the expected table IDs, then
+`Push Update`. Close old dialogs and touch the tablets again to verify the menu.
+Test one tablet first when changing behavior. This updater sends only the tablet
+ordering script; it does not update Tap-to-Pay units or other objects automatically.

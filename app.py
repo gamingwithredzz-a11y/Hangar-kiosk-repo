@@ -860,6 +860,21 @@ def api_order_place(
 # Table-02 Tap-to-Pay.
 # ============================================================
 
+def api_pay_table_status(query, _body):
+    table_id = query.get("table_id", [""])[0].strip()
+    if not table_id:
+        return err("table_id is required")
+
+    with db() as conn:
+        count = scalar(
+            conn,
+            "SELECT COUNT(*) FROM bills WHERE table_id = ? AND status = 'pending_payment'",
+            (table_id,),
+        )
+
+    return ok({"pending_bills": count})
+
+
 def api_pay_pending(
     query,
     _body
@@ -3125,6 +3140,9 @@ ROUTES = {
 
     ("GET", "/pay/pending"):
         api_pay_pending,
+
+    ("GET", "/pay/table-status"):
+        api_pay_table_status,
 
     ("POST", "/pay/confirm"):
         api_pay_confirm,
