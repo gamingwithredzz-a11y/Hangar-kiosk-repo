@@ -276,6 +276,10 @@ def init_db():
         # Menu
         # ----------------------------------------------------
 
+        # Retire old catalog/stock entries without rewriting order history.
+        conn.execute("DELETE FROM menu_items WHERE id = ?", ("curry_goat_tacos",))
+        conn.execute("DELETE FROM inventory_items WHERE item_id = ?", ("curry_goat_tacos",))
+
         conn.execute(
             """
             UPDATE menu_items
@@ -558,6 +562,13 @@ def is_taco_tuesday():
     return datetime.now(PACIFIC).weekday() == 1
 
 
+def inventory_sold_out(conn, item_id):
+    stock = conn.execute(
+        "SELECT count FROM inventory_items WHERE item_id = ?", (item_id,)
+    ).fetchone()
+    return stock is not None and stock["count"] <= 0
+
+
 def effective_menu_item(item, taco_tuesday):
     item = dict(item)
     if taco_tuesday:
@@ -585,12 +596,19 @@ def api_menu(
             )
         )
 
+        for item in items:
+            item["sold_out"] = inventory_sold_out(conn, item["id"])
+            if item["sold_out"]:
+                item["available"] = 0
+
     taco_tuesday = is_taco_tuesday()
     items = [effective_menu_item(item, taco_tuesday) for item in items]
     items = [item for item in items if item is not None]
 
     if query.get("view", [""])[0] == "prices":
-        return ok({"taco_tuesday": taco_tuesday, "prices": [
+        return ok({"taco_tuesday": taco_tuesday,
+                   "sold_out": [item["id"] for item in items if item["sold_out"]],
+                   "prices": [
             value for item in items
             for value in (item["id"], item["price_linden"])
         ]})
@@ -659,6 +677,9 @@ def api_cart_add(
                 "menu item is unavailable",
                 404
             )
+
+        if inventory_sold_out(conn, item_id):
+            return err(item["name"] + " is sold out. Please choose another item.", 409)
 
         cart_id = get_or_create_cart(
             conn,
@@ -800,6 +821,17 @@ def api_order_place(
             return err(
                 "cart is empty",
                 404
+            )
+
+        sold_out_names = [
+            item["name"] for item in items
+            if inventory_sold_out(conn, item["item_id"])
+        ]
+        if sold_out_names:
+            return err(
+                "Sold out: " + ", ".join(dict.fromkeys(sold_out_names))
+                + ". Please ask staff to help clear or revise your unpaid cart.",
+                409,
             )
 
         amount = sum(
@@ -1753,6 +1785,10 @@ def api_inventory_snapshot(
                 )
                 or 0
             )
+
+            if item_id == "curry_goat_tacos":
+                conn.execute("DELETE FROM inventory_items WHERE item_id = ?", (item_id,))
+                continue
 
             if not item_id:
                 continue

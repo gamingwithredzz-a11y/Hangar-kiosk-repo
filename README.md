@@ -200,6 +200,20 @@ have not been configured.
 - Inventory is deducted only when the item is actually removed from the dispenser
   inventory, such as when the dispenser gives the item to staff.
 - The backend stores the latest count for each tracked dispenser item.
+- A tracked item with a reported count of zero or less is sold out. The backend
+  rejects new cart additions from tablets and server HUDs, and rechecks stock
+  before creating a new bill. Restocking automatically restores ordering after
+  the dispenser posts its next snapshot. Items without a stock record stay
+  orderable; no zero count is assumed for untracked drinks or shots.
+- Updated tablets mark sold-out items in category text when touched. Re-touch
+  the tablet to refresh displayed stock. The backend checks current stock even
+  when the tablet or server HUD has an older menu open.
+- If an existing unpaid cart contains an item that has since sold out, Place
+  Order returns an error naming the item. Staff must help clear/revise the cart.
+  Already-issued bills and paid kitchen tickets are preserved.
+- This is a zero-stock check, not a reservation system. Several customers can
+  still order the last tray before it is physically dispensed. Keep the kitchen
+  dispenser script running so stock snapshots reach the backend.
 
 ## Updating Prices
 
